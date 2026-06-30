@@ -690,7 +690,7 @@ export default function App() {
         setAuthError(
           `Email ${
             email || 'này'
-          } không được phép. Chỉ cho phép @haichai.vn và @starspits.vn.`
+          } không được phép. Chỉ cho phép @haichai.vn và @starspirits.vn`
         );
         return;
       }
@@ -811,7 +811,7 @@ export default function App() {
         setAuthError(
           `Email ${
             email || 'này'
-          } không được phép. Chỉ cho phép @haichai.vn và @starspits.vn.`
+          } không được phép. Chỉ cho phép @haichai.vn và @starspirits.vn`
         );
         setSyncStatus('Email không thuộc domain công ty');
         return;
@@ -2259,7 +2259,7 @@ export default function App() {
               {currentUser?.email || 'Chưa đăng nhập'}
             </p>
             <p>
-              <strong>Domain được phép:</strong> @haichai.vn, @starspits.vn
+              <strong>Domain được phép:</strong> @haichai.vn, @starspirits.vn 
             </p>
             <p>
               <strong>Đồng bộ:</strong> {syncStatus}
@@ -2411,7 +2411,7 @@ export default function App() {
 
         <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm text-slate-600 mb-5">
           Chỉ cho phép email có đuôi <strong>@haichai.vn</strong> hoặc{' '}
-          <strong>@starspits.vn</strong>.
+          <strong>@starspirits.vn</strong>.
         </div>
 
         {authError && (
