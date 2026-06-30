@@ -25,20 +25,31 @@ const firebaseConfig = {
   messagingSenderId: "409195333074",
   appId: "1:409195333074:web:05b167ddd5da157899b40b"
 };
-
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-const ALLOWED_EMAIL_DOMAINS = ['haichai.vn', 'starspits.vn'];
+const ALLOWED_EMAIL_DOMAINS = ['haichai.vn', 'starspirits.vn', 'starspits.vn'];
+
+const ALLOWED_EMAILS = [
+  'quang.vuthanh@starspirits.vn',
+  'trung.ceo@haichai.vn'
+];
+
+const normalizeEmail = (email = '') => email.trim().toLowerCase();
 
 const getEmailDomain = (email = '') =>
-  email.toLowerCase().split('@').pop() || '';
+  normalizeEmail(email).split('@').pop() || '';
 
-const isAllowedCompanyEmail = (email = '') =>
-  ALLOWED_EMAIL_DOMAINS.includes(getEmailDomain(email));
+const isAllowedCompanyEmail = (email = '') => {
+  const normalizedEmail = normalizeEmail(email);
+  return (
+    ALLOWED_EMAILS.includes(normalizedEmail) ||
+    ALLOWED_EMAIL_DOMAINS.includes(getEmailDomain(normalizedEmail))
+  );
+};
 
 const getAppDataRef = () => doc(db, 'workspaces', 'haichai-script-studio');
 
