@@ -45,9 +45,11 @@ const getEmailDomain = (email = '') =>
 
 const isAllowedCompanyEmail = (email = '') => {
   const normalizedEmail = normalizeEmail(email);
+  const domain = getEmailDomain(normalizedEmail);
+
   return (
     ALLOWED_EMAILS.includes(normalizedEmail) ||
-    ALLOWED_EMAIL_DOMAINS.includes(getEmailDomain(normalizedEmail))
+    ALLOWED_EMAIL_DOMAINS.includes(domain)
   );
 };
 
