@@ -2784,10 +2784,10 @@ export default function App() {
         {activeTab === 'settings' && renderSettings()}
       </main>
 
-      {/* Global UI Components */}
+      {/* Global UI Components  */}
       {renderModal()}
 
-      {/* Global Styles for simple animations & CSS Reset */}
+      {/* Global Styles for simple anmations & CSS Reset */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
