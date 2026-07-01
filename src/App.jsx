@@ -285,6 +285,49 @@ const CATEGORIES = [
   'Sản phẩm / niềm tin / giấy tờ',
 ];
 
+const TOPIC_COUNT_OPTIONS = [5, 10, 20, 30];
+
+const TOPIC_DISTRIBUTIONS = {
+  5: {
+    'Góc khuất / quan điểm ngược': 2,
+    'Sai lầm / bài học người chủ': 1,
+    'Hậu trường thật': 1,
+    'Sản phẩm / niềm tin / giấy tờ': 1,
+  },
+  10: {
+    'Góc khuất / quan điểm ngược': 5,
+    'Sai lầm / bài học người chủ': 2,
+    'Hậu trường thật': 2,
+    'Sản phẩm / niềm tin / giấy tờ': 1,
+  },
+  20: {
+    'Góc khuất / quan điểm ngược': 9,
+    'Sai lầm / bài học người chủ': 5,
+    'Hậu trường thật': 4,
+    'Sản phẩm / niềm tin / giấy tờ': 2,
+  },
+  30: {
+    'Góc khuất / quan điểm ngược': 14,
+    'Sai lầm / bài học người chủ': 7,
+    'Hậu trường thật': 6,
+    'Sản phẩm / niềm tin / giấy tờ': 3,
+  },
+};
+
+const getTopicDistributionLines = (count) => {
+  const distribution = TOPIC_DISTRIBUTIONS[count] || TOPIC_DISTRIBUTIONS[30];
+  return Object.entries(distribution)
+    .map(([category, quantity]) => `- ${quantity} chủ đề: ${category}`)
+    .join('\n');
+};
+
+const getTopicDistributionSummary = (count) => {
+  const distribution = TOPIC_DISTRIBUTIONS[count] || TOPIC_DISTRIBUTIONS[30];
+  return Object.entries(distribution)
+    .map(([category, quantity]) => `${quantity} ${category}`)
+    .join(' · ');
+};
+
 const EMPTY_MANUAL_SCRIPT = {
   title: '',
   category: CATEGORIES[0],
@@ -587,19 +630,21 @@ const callGeminiWithRetry = async (
   throw lastError || new Error('Không gọi được Google Gemini.');
 };
 
-const generateTopicsFromAI = async (bible, currentScripts) => {
+const generateTopicsFromAI = async (bible, currentScripts, topicCount = 30) => {
+  const safeTopicCount = TOPIC_COUNT_OPTIONS.includes(Number(topicCount))
+    ? Number(topicCount)
+    : 30;
+  const distributionLines = getTopicDistributionLines(safeTopicCount);
+
   const systemPrompt = `Bạn là Content Strategist cho kênh TikTok nhân hiệu Haichai.
-Dựa trên Content Bible và kết quả scan thư viện kịch bản cũ, hãy tạo ra CHÍNH XÁC 30 chủ đề mới theo đúng tỉ lệ sau:
-- 14 chủ đề: Góc khuất / quan điểm ngược
-- 7 chủ đề: Sai lầm / bài học người chủ
-- 6 chủ đề: Hậu trường thật
-- 3 chủ đề: Sản phẩm / niềm tin / giấy tờ
+Dựa trên Content Bible và kết quả scan thư viện kịch bản cũ, hãy tạo ra CHÍNH XÁC ${safeTopicCount} chủ đề mới theo đúng tỉ lệ sau:
+${distributionLines}
 
 TUYỆT ĐỐI QUAN TRỌNG:
 - Chỉ trả về JSON thuần, không markdown, không giải thích.
 - Không bọc JSON trong \`\`\`json.
 - JSON phải parse được bằng JSON.parse().
-- BẮT BUỘC mảng topics có đúng 30 items.
+- BẮT BUỘC mảng topics có đúng ${safeTopicCount} items.
 - Không trùng với các chủ đề đã có trong thư viện.
 - Không biến nội dung thành quảng cáo rượu, không cổ vũ uống rượu.
 - Ưu tiên hook: một con số, quan điểm ngược, gây tò mò, khơi gợi nỗi đau, trích lời nói thật.
@@ -609,13 +654,7 @@ TUYỆT ĐỐI QUAN TRỌNG:
 
   const userPrompt = `Content Bible:\n${bible}\n\nThư viện kịch bản cũ cần tránh trùng:\n${JSON.stringify(
     oldTopics
-  )}\n\nHãy tạo ĐẦY ĐỦ 30 chủ đề ngay bây giờ theo đúng tỉ lệ:
-- 14 chủ đề: Góc khuất / quan điểm ngược
-- 7 chủ đề: Sai lầm / bài học người chủ
-- 6 chủ đề: Hậu trường thật
-- 3 chủ đề: Sản phẩm / niềm tin / giấy tờ
-
-CHỈ TRẢ VỀ JSON THUẦN THEO FORMAT SAU:
+  )}\n\nHãy tạo ĐẦY ĐỦ ${safeTopicCount} chủ đề ngay bây giờ theo đúng tỉ lệ:\n${distributionLines}\n\nCHỈ TRẢ VỀ JSON THUẦN THEO FORMAT SAU:
 {
   "topics": [
     {
@@ -633,13 +672,14 @@ CHỈ TRẢ VỀ JSON THUẦN THEO FORMAT SAU:
 }
 
 BẮT BUỘC:
-- topics phải có đúng 30 items.
+- topics phải có đúng ${safeTopicCount} items.
 - Mỗi item phải có đủ các field: category, topicName, angle, hookType, suggestedHook, mainMessage, whyItCanWork, avoidRepeating, duplicateRiskScore.
+- category chỉ được nằm trong 4 nhóm nội dung đã nêu ở trên.
 - duplicateRiskScore phải là số nguyên từ 0 đến 100.`;
 
   // TỐI ƯU TỐC ĐỘ:
   // Không truyền schema/responseSchema cho mục Tạo chủ đề nữa.
-  // Gọi 1 lần duy nhất để tạo đủ 30 chủ đề, thay vì chia 4 lần tuần tự.
+  // Gọi 1 lần duy nhất để tạo đủ số chủ đề đã chọn, thay vì chia nhiều lần tuần tự.
   const result = await callGeminiWithRetry(systemPrompt, userPrompt, null, 1);
   const rawTopics = Array.isArray(result?.topics) ? result.topics : [];
 
@@ -649,7 +689,7 @@ BẮT BUỘC:
     );
   }
 
-  return rawTopics.slice(0, 30).map((t, index) => ({
+  return rawTopics.slice(0, safeTopicCount).map((t, index) => ({
     id: `top_${Date.now()}_${index}`,
     ...t,
     selected: false,
@@ -760,6 +800,11 @@ export default function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [isGeneratingTopics, setIsGeneratingTopics] = useState(false);
+  const [topicCount, setTopicCount] = useState(30);
+  const [customTopicText, setCustomTopicText] = useState('');
+  const [customTopicCategory, setCustomTopicCategory] = useState(CATEGORIES[0]);
+  const [isGeneratingCustomScript, setIsGeneratingCustomScript] =
+    useState(false);
 
   // Script Gen State
   const [isGeneratingScripts, setIsGeneratingScripts] = useState(false);
@@ -1153,7 +1198,7 @@ export default function App() {
 
     setIsGeneratingTopics(true);
     try {
-      const topics = await generateTopicsFromAI(bible, scripts);
+      const topics = await generateTopicsFromAI(bible, scripts, topicCount);
       if (topics && topics.length > 0) {
         setGeneratedTopics(topics);
       } else {
@@ -1167,6 +1212,81 @@ export default function App() {
       showAlert('Lỗi Gemini', error.message || 'Không tạo được chủ đề.');
     } finally {
       setIsGeneratingTopics(false);
+    }
+  };
+
+
+  const handleGenerateCustomTopicScript = async () => {
+    const topicText = customTopicText.trim();
+
+    if (!topicText) {
+      return showAlert(
+        'Thiếu chủ đề phát sinh',
+        'Vui lòng nhập chủ đề thực tế cần tạo kịch bản.'
+      );
+    }
+
+    const savedKey = normalizeGeminiApiKey(
+      geminiApiKey || localStorage.getItem('gemini_api_key') || ''
+    );
+    if (!savedKey) {
+      setActiveTab('settings');
+      return showAlert(
+        'Thiếu Gemini API Key',
+        'Vào Cài đặt & Dữ liệu, dán Gemini API Key rồi bấm “Lưu Gemini API Key” trước khi tạo kịch bản.'
+      );
+    }
+
+    const customTopic = {
+      id: `custom_top_${Date.now()}`,
+      category: customTopicCategory,
+      topicName: topicText,
+      angle: `Chủ đề phát sinh thực tế: ${topicText}`,
+      hookType: 'Chủ đề phát sinh thực tế',
+      suggestedHook: '',
+      mainMessage:
+        'AI tự xác định thông điệp chính dựa trên chủ đề phát sinh và Content Bible.',
+      whyItCanWork:
+        'Chủ đề đến từ tình huống thực tế nên có tính thời sự và chất liệu thật.',
+      avoidRepeating:
+        'Tránh lặp lại hook, góc nhìn và thông điệp đã có trong thư viện kịch bản cũ.',
+      duplicateRiskScore: 0,
+      selected: true,
+    };
+
+    setIsGeneratingCustomScript(true);
+    setGenerationStatus('Đang tạo kịch bản từ chủ đề phát sinh...');
+
+    try {
+      const newScripts = await generateScriptsBatchFromAI(
+        [customTopic],
+        bible,
+        scripts
+      );
+
+      if (newScripts && newScripts.length > 0) {
+        setDraftScripts((prev) => [...prev, ...newScripts]);
+        setCustomTopicText('');
+        setActiveTab('generate-scripts');
+        showAlert(
+          'Thành công',
+          'Đã tạo 1 kịch bản từ chủ đề phát sinh và đưa vào Kịch bản Draft.'
+        );
+      } else {
+        showAlert(
+          'Lỗi Gemini',
+          'Gemini kết nối được nhưng chưa trả về kịch bản cho chủ đề phát sinh.'
+        );
+      }
+    } catch (error) {
+      console.error('Custom topic script generation error:', error);
+      showAlert(
+        'Lỗi Gemini',
+        error.message || 'Không tạo được kịch bản từ chủ đề phát sinh.'
+      );
+    } finally {
+      setIsGeneratingCustomScript(false);
+      setGenerationStatus('');
     }
   };
 
@@ -2036,7 +2156,7 @@ export default function App() {
   const renderTopicGenerator = () => (
     <div className="animate-fade-in">
       <h2 className="text-2xl font-bold text-slate-800 mb-6">
-        Tạo 30 Chủ đề theo Tỉ lệ
+        Tạo Chủ đề theo Tỉ lệ
       </h2>
 
       {/* Scan Section */}
@@ -2081,24 +2201,107 @@ export default function App() {
               Bước 2: Tạo chủ đề mới
             </h3>
             <p className="text-sm text-slate-500">
-              Tạo 30 chủ đề theo đúng Content Bible (14 - 7 - 6 - 3).
+              Tạo {topicCount} chủ đề theo đúng Content Bible, tự chia tỉ lệ nội dung tương ứng.
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Tỉ lệ hiện tại: {getTopicDistributionSummary(topicCount)}
             </p>
           </div>
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Số lượng chủ đề
+              </label>
+              <select
+                value={topicCount}
+                onChange={(e) => setTopicCount(Number(e.target.value))}
+                disabled={isGeneratingTopics}
+                className="border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                {TOPIC_COUNT_OPTIONS.map((count) => (
+                  <option key={count} value={count}>
+                    {count} chủ đề
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleGenerateTopics}
+              disabled={isGeneratingTopics || !scanResult}
+              className={`px-5 py-2 rounded-lg font-medium transition shadow-sm flex items-center gap-2 ${
+                !scanResult
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                  : 'bg-[#0d71ba] hover:opacity-90 text-white'
+              }`}
+            >
+              {isGeneratingTopics ? 'Đang tạo...' : `Tạo ${topicCount} Chủ Đề`}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Custom Real-life Topic Section */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-8">
+        <div className="flex justify-between items-start gap-6 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-1">
+              Tạo 1 kịch bản từ chủ đề phát sinh
+            </h3>
+            <p className="text-sm text-slate-500">
+              Dùng khi vừa có tình huống thực tế, sự kiện ở cửa hàng, câu chuyện đi thị trường hoặc insight mới. AI vẫn bám Content Bible và tránh trùng thư viện cũ.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+          <div className="lg:col-span-1">
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Nhóm nội dung
+            </label>
+            <select
+              value={customTopicCategory}
+              onChange={(e) => setCustomTopicCategory(e.target.value)}
+              disabled={isGeneratingCustomScript}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              {CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="lg:col-span-2">
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Chủ đề phát sinh thực tế
+            </label>
+            <textarea
+              value={customTopicText}
+              onChange={(e) => setCustomTopicText(e.target.value)}
+              disabled={isGeneratingCustomScript}
+              rows={3}
+              placeholder="Ví dụ: Hôm nay đi khảo sát mặt bằng VinWestPoint, phát hiện khách hỏi nhiều về giấy tờ nguồn gốc hơn là giá..."
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 resize-none"
+            />
+          </div>
+
           <button
-            onClick={handleGenerateTopics}
-            disabled={isGeneratingTopics || !scanResult}
-            className={`px-5 py-2 rounded-lg font-medium transition shadow-sm flex items-center gap-2 ${
-              !scanResult
+            onClick={handleGenerateCustomTopicScript}
+            disabled={isGeneratingCustomScript || !customTopicText.trim()}
+            className={`px-5 py-2 rounded-lg font-medium transition shadow-sm ${
+              isGeneratingCustomScript || !customTopicText.trim()
                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                 : 'bg-[#0d71ba] hover:opacity-90 text-white'
             }`}
           >
-            {isGeneratingTopics ? 'Đang tạo...' : 'Tạo 30 Chủ Đề'}
+            {isGeneratingCustomScript ? 'Đang tạo...' : 'Tạo kịch bản phát sinh'}
           </button>
         </div>
+      </div>
 
-        {generatedTopics.length > 0 && (
-          <div className="mt-6 border border-slate-200 rounded-xl overflow-hidden">
+      {generatedTopics.length > 0 && (
+        <div className="mt-8 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
             <div className="bg-indigo-50 p-3 border-b border-slate-200 flex justify-between items-center text-sm">
               <span className="font-medium text-indigo-800">
                 Đã chọn: {generatedTopics.filter((t) => t.selected).length} chủ
@@ -2169,9 +2372,8 @@ export default function App() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 
