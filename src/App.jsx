@@ -331,9 +331,21 @@ const getStoredGeminiApiKey = () =>
 
 // Gemini response_schema chỉ nhận một tập con của JSON Schema.
 // Hàm này giữ nguyên cấu trúc dữ liệu nhưng bỏ các field dễ gây 400 như description/title/default.
-const sanitizeGeminiSchema = (schema) => {
-  if (Array.isArray(schema)) return schema.map(sanitizeGeminiSchema);
+const sanitizeGeminiSchema = (schema, insideProperties = false) => {
+  if (Array.isArray(schema)) return schema.map((item) => sanitizeGeminiSchema(item));
   if (!schema || typeof schema !== 'object') return schema;
+
+  // QUAN TRỌNG:
+  // response_schema.properties chứa tên field động như ok/message/topics/scripts.
+  // Không được lọc các tên field này theo allowedKeys, nếu không Gemini sẽ báo:
+  // "response_schema.required[0]: property is not defined".
+  if (insideProperties) {
+    const cleanedProperties = {};
+    Object.entries(schema).forEach(([propertyName, propertySchema]) => {
+      cleanedProperties[propertyName] = sanitizeGeminiSchema(propertySchema);
+    });
+    return cleanedProperties;
+  }
 
   const allowedKeys = new Set([
     'type',
@@ -353,7 +365,9 @@ const sanitizeGeminiSchema = (schema) => {
   const cleaned = {};
   Object.entries(schema).forEach(([key, value]) => {
     if (!allowedKeys.has(key)) return;
-    cleaned[key] = sanitizeGeminiSchema(value);
+    cleaned[key] = key === 'properties'
+      ? sanitizeGeminiSchema(value, true)
+      : sanitizeGeminiSchema(value);
   });
 
   return cleaned;
