@@ -588,92 +588,68 @@ const callGeminiWithRetry = async (
 };
 
 const generateTopicsFromAI = async (bible, currentScripts) => {
-  const baseSystemPrompt = `Bạn là Content Strategist cho kênh TikTok nhân hiệu Haichai.
-Dựa trên Content Bible và kết quả scan thư viện kịch bản cũ, hãy tạo chủ đề mới cho TikTok.
+  const systemPrompt = `Bạn là Content Strategist cho kênh TikTok nhân hiệu Haichai.
+Dựa trên Content Bible và kết quả scan thư viện kịch bản cũ, hãy tạo ra CHÍNH XÁC 30 chủ đề mới theo đúng tỉ lệ sau:
+- 14 chủ đề: Góc khuất / quan điểm ngược
+- 7 chủ đề: Sai lầm / bài học người chủ
+- 6 chủ đề: Hậu trường thật
+- 3 chủ đề: Sản phẩm / niềm tin / giấy tờ
 
-Yêu cầu:
+TUYỆT ĐỐI QUAN TRỌNG:
+- Chỉ trả về JSON thuần, không markdown, không giải thích.
+- Không bọc JSON trong \`\`\`json.
+- JSON phải parse được bằng JSON.parse().
+- BẮT BUỘC mảng topics có đúng 30 items.
 - Không trùng với các chủ đề đã có trong thư viện.
 - Không biến nội dung thành quảng cáo rượu, không cổ vũ uống rượu.
 - Ưu tiên hook: một con số, quan điểm ngược, gây tò mò, khơi gợi nỗi đau, trích lời nói thật.
-- duplicateRiskScore là điểm đánh giá từ 0-100 về khả năng trùng lặp ý tưởng với thư viện cũ (càng cao càng dễ trùng).
-- Chỉ trả JSON hợp lệ.`;
-
-  const schema = {
-    type: 'OBJECT',
-    properties: {
-      topics: {
-        type: 'ARRAY',
-        items: {
-          type: 'OBJECT',
-          properties: {
-            category: { type: 'STRING' },
-            topicName: { type: 'STRING' },
-            angle: { type: 'STRING' },
-            hookType: { type: 'STRING' },
-            suggestedHook: { type: 'STRING' },
-            mainMessage: { type: 'STRING' },
-            whyItCanWork: { type: 'STRING' },
-            avoidRepeating: { type: 'STRING' },
-            duplicateRiskScore: { type: 'INTEGER' },
-          },
-          required: [
-            'category',
-            'topicName',
-            'angle',
-            'hookType',
-            'suggestedHook',
-            'mainMessage',
-            'whyItCanWork',
-            'avoidRepeating',
-            'duplicateRiskScore',
-          ],
-        },
-      },
-    },
-    required: ['topics'],
-  };
+- duplicateRiskScore là điểm đánh giá từ 0-100 về khả năng trùng lặp ý tưởng với thư viện cũ.`;
 
   const oldTopics = currentScripts.map((s) => s.topic).filter(Boolean);
-  const categoryPlan = [
-    { category: 'Góc khuất / quan điểm ngược', count: 14 },
-    { category: 'Sai lầm / bài học người chủ', count: 7 },
-    { category: 'Hậu trường thật', count: 6 },
-    { category: 'Sản phẩm / niềm tin / giấy tờ', count: 3 },
-  ];
 
-  const allTopics = [];
+  const userPrompt = `Content Bible:\n${bible}\n\nThư viện kịch bản cũ cần tránh trùng:\n${JSON.stringify(
+    oldTopics
+  )}\n\nHãy tạo ĐẦY ĐỦ 30 chủ đề ngay bây giờ theo đúng tỉ lệ:
+- 14 chủ đề: Góc khuất / quan điểm ngược
+- 7 chủ đề: Sai lầm / bài học người chủ
+- 6 chủ đề: Hậu trường thật
+- 3 chủ đề: Sản phẩm / niềm tin / giấy tờ
 
-  for (const item of categoryPlan) {
-    emitGeminiStatus(
-      `Đang tạo ${item.count} chủ đề nhóm “${item.category}”...`
-    );
-
-    const userPrompt = `Content Bible:\n${bible}\n\nThư viện kịch bản cũ cần tránh trùng:\n${JSON.stringify(
-      oldTopics
-    )}\n\nHãy tạo CHÍNH XÁC ${item.count} chủ đề cho nhóm: ${item.category}.\n\nYêu cầu JSON:\n{\n  "topics": [\n    {\n      "category": "${item.category}",\n      "topicName": "...",\n      "angle": "...",\n      "hookType": "...",\n      "suggestedHook": "...",\n      "mainMessage": "...",\n      "whyItCanWork": "...",\n      "avoidRepeating": "...",\n      "duplicateRiskScore": 0\n    }\n  ]\n}\n\nBẮT BUỘC mảng topics có đúng ${item.count} phần tử. Field category của mọi phần tử phải là "${item.category}".`;
-
-    const result = await callGeminiWithRetry(baseSystemPrompt, userPrompt, schema, 2);
-    const chunkTopics = Array.isArray(result?.topics) ? result.topics : [];
-
-    if (chunkTopics.length === 0) {
-      throw new Error(
-        `Gemini đã kết nối được nhưng không trả về chủ đề cho nhóm “${item.category}”.`
-      );
+CHỈ TRẢ VỀ JSON THUẦN THEO FORMAT SAU:
+{
+  "topics": [
+    {
+      "category": "Góc khuất / quan điểm ngược",
+      "topicName": "...",
+      "angle": "...",
+      "hookType": "...",
+      "suggestedHook": "...",
+      "mainMessage": "...",
+      "whyItCanWork": "...",
+      "avoidRepeating": "...",
+      "duplicateRiskScore": 0
     }
+  ]
+}
 
-    allTopics.push(
-      ...chunkTopics.slice(0, item.count).map((topic) => ({
-        ...topic,
-        category: item.category,
-      }))
+BẮT BUỘC:
+- topics phải có đúng 30 items.
+- Mỗi item phải có đủ các field: category, topicName, angle, hookType, suggestedHook, mainMessage, whyItCanWork, avoidRepeating, duplicateRiskScore.
+- duplicateRiskScore phải là số nguyên từ 0 đến 100.`;
+
+  // TỐI ƯU TỐC ĐỘ:
+  // Không truyền schema/responseSchema cho mục Tạo chủ đề nữa.
+  // Gọi 1 lần duy nhất để tạo đủ 30 chủ đề, thay vì chia 4 lần tuần tự.
+  const result = await callGeminiWithRetry(systemPrompt, userPrompt, null, 1);
+  const rawTopics = Array.isArray(result?.topics) ? result.topics : [];
+
+  if (rawTopics.length === 0) {
+    throw new Error(
+      'Gemini đã kết nối được nhưng không trả về mảng topics. Hãy thử lại hoặc rút gọn Content Bible.'
     );
   }
 
-  if (allTopics.length === 0) {
-    throw new Error('Gemini đã kết nối được nhưng không trả về mảng topics.');
-  }
-
-  return allTopics.map((t, index) => ({
+  return rawTopics.slice(0, 30).map((t, index) => ({
     id: `top_${Date.now()}_${index}`,
     ...t,
     selected: false,
