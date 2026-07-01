@@ -300,34 +300,19 @@ const EMPTY_MANUAL_SCRIPT = {
 };
 
 // --- REAL AI FUNCTIONS (GEMINI API) ---
+// LƯU Ý QUAN TRỌNG: Google liên tục nghỉ hưu (shutdown) các model cũ. Tính đến
+// giữa năm 2026, "gemini-2.0-flash" và "gemini-1.5-flash" đã bị tắt hoàn toàn
+// và LUÔN trả về lỗi 404 "model not found" — đây chính là nguyên nhân gây lỗi
+// gọi API key trong bản cũ. Danh sách dưới đây dùng model ổn định hiện tại
+// (gemini-2.5-flash) + alias "gemini-flash-latest" (Google tự động trỏ tới bản
+// flash mới nhất) + gemini-2.5-flash-lite làm phương án dự phòng cuối cùng.
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
+  'gemini-flash-latest',
   'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
 ];
 
 const GEMINI_TIMEOUT_MS = 30000;
-
-// Nhận cả key thô hoặc dạng copy từ .env như GEMINI_API_KEY="AIza..."
-const normalizeGeminiApiKey = (value = '') => {
-  let key = String(value || '').trim();
-
-  const assignmentMatch = key.match(
-    /(?:GEMINI_API_KEY|GOOGLE_API_KEY|VITE_GEMINI_API_KEY|REACT_APP_GEMINI_API_KEY)\s*=\s*['"]?([^'"\s]+)/i
-  );
-  if (assignmentMatch?.[1]) key = assignmentMatch[1];
-
-  const rawKeyMatch = key.match(/AIza[0-9A-Za-z_-]{20,}/);
-  if (rawKeyMatch?.[0]) key = rawKeyMatch[0];
-
-  return key.replace(/^['"]|['"]$/g, '').trim();
-};
-
-const getStoredGeminiApiKey = () =>
-  typeof window !== 'undefined'
-    ? normalizeGeminiApiKey(localStorage.getItem('gemini_api_key') || '')
-    : '';
 
 const emitGeminiStatus = (message) => {
   if (typeof window !== 'undefined') {
@@ -362,41 +347,14 @@ const fetchWithTimeout = async (
 };
 
 const normalizeGeminiError = (status, message) => {
-  const lowerMessage = String(message || '').toLowerCase();
-
-  if (
-    lowerMessage.includes('api key not valid') ||
-    lowerMessage.includes('api_key_invalid') ||
-    lowerMessage.includes('invalid api key')
-  ) {
-    return `Gemini API Key không hợp lệ (${status}). Hãy dán đúng key bắt đầu bằng “AIza...” lấy từ Google AI Studio, không dùng Firebase apiKey.`;
-  }
-
-  if (
-    lowerMessage.includes('has not been used') ||
-    lowerMessage.includes('has not been enabled') ||
-    lowerMessage.includes('generative language api')
-  ) {
-    return `Project của key chưa bật/quyền dùng Gemini API (${status}). Hãy tạo key trong Google AI Studio hoặc bật Generative Language API cho project đó.`;
-  }
-
-  if (
-    lowerMessage.includes('referer') ||
-    lowerMessage.includes('http referrer') ||
-    lowerMessage.includes('ip address') ||
-    lowerMessage.includes('application restrictions')
-  ) {
-    return `Gemini API Key đang bị giới hạn domain/IP (${status}). Hãy thêm đúng domain web đang chạy vào phần restriction hoặc tạo key mới cho Gemini API.`;
-  }
-
   if (status === 400)
     return `Gemini báo request chưa hợp lệ (${status}): ${
       message || 'Kiểm tra model/schema/prompt.'
     }`;
   if (status === 401 || status === 403)
-    return `Gemini API Key sai, bị chặn, hoặc chưa được cấp quyền (${status}). Hãy kiểm tra lại key ở Cài đặt & Dữ liệu.`;
+    return `Gemini API Key sai hoặc chưa được cấp quyền (${status}). Hãy kiểm tra lại key ở Cài đặt & Dữ liệu.`;
   if (status === 404)
-    return `Model Gemini không tồn tại hoặc key chưa có quyền dùng model này (${status}).`;
+    return `Model Gemini không tồn tại hoặc đã bị Google ngừng hỗ trợ (${status}). App sẽ tự thử model dự phòng tiếp theo.`;
   if (status === 429)
     return 'Gemini đang bị rate limit. Đợi 30–60 giây rồi thử lại.';
   return message || `Lỗi Google Gemini (${status})`;
@@ -431,7 +389,10 @@ const callGeminiWithRetry = async (
   schema,
   retries = 1
 ) => {
-  const apiKey = getStoredGeminiApiKey();
+  const apiKey =
+    typeof window !== 'undefined'
+      ? (localStorage.getItem('gemini_api_key') || '').trim()
+      : '';
 
   if (!apiKey) {
     throw new Error(
@@ -439,15 +400,13 @@ const callGeminiWithRetry = async (
     );
   }
 
-  // Payload dùng format REST trực tiếp của Gemini API.
-  // Lưu ý: response_mime_type/response_schema giúp tránh lỗi 400 khi gọi bằng fetch.
   const payload = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ parts: [{ text: userPrompt }] }],
     generationConfig: {
-      response_mime_type: 'application/json',
-      response_schema: schema,
-      max_output_tokens: 8192,
+      responseMimeType: 'application/json',
+      responseSchema: schema,
+      maxOutputTokens: 8192,
       temperature: 0.7,
     },
   };
@@ -463,13 +422,10 @@ const callGeminiWithRetry = async (
           }...`
         );
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const response = await fetchWithTimeout(url, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
 
@@ -760,28 +716,25 @@ export default function App() {
   };
 
   const handleSaveGeminiKey = () => {
-    const key = normalizeGeminiApiKey(geminiApiKey);
+    const key = geminiApiKey.trim();
     if (!key) {
       localStorage.removeItem('gemini_api_key');
-      setGeminiApiKey('');
       setGeminiKeyStatus('Đã xoá Gemini API Key trên máy này.');
       return;
     }
 
     localStorage.setItem('gemini_api_key', key);
-    setGeminiApiKey(key);
     setGeminiKeyStatus('Đã lưu Gemini API Key trên máy này.');
   };
 
   const handleTestGeminiKey = async () => {
-    const key = normalizeGeminiApiKey(geminiApiKey);
+    const key = geminiApiKey.trim();
     if (!key) {
       setGeminiKeyStatus('Bạn chưa nhập key để test.');
       return;
     }
 
     localStorage.setItem('gemini_api_key', key);
-    setGeminiApiKey(key);
     setIsTestingGeminiKey(true);
     setGeminiKeyStatus('Đang test Gemini API Key...');
 
@@ -1062,9 +1015,11 @@ export default function App() {
   };
 
   const handleGenerateTopics = async () => {
-    const savedKey = normalizeGeminiApiKey(
-      geminiApiKey || localStorage.getItem('gemini_api_key') || ''
-    );
+    const savedKey = (
+      geminiApiKey ||
+      localStorage.getItem('gemini_api_key') ||
+      ''
+    ).trim();
     if (!savedKey) {
       setActiveTab('settings');
       return showAlert(
@@ -1103,9 +1058,11 @@ export default function App() {
     if (selected.length === 0)
       return showAlert('Thông báo', 'Vui lòng chọn ít nhất 1 chủ đề!');
 
-    const savedKey = normalizeGeminiApiKey(
-      geminiApiKey || localStorage.getItem('gemini_api_key') || ''
-    );
+    const savedKey = (
+      geminiApiKey ||
+      localStorage.getItem('gemini_api_key') ||
+      ''
+    ).trim();
     if (!savedKey) {
       setActiveTab('settings');
       return showAlert(
