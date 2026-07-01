@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
@@ -14,8 +14,8 @@ import {
   onSnapshot,
   serverTimestamp,
 } from 'firebase/firestore';
-
 // --- FIREBASE CONFIG ---
+// Firebase apiKey trong config client KHÔNG phải secret. AI provider key mới là secret, nên app chỉ lưu AI key trong localStorage của máy người dùng.
 const firebaseConfig = {
   apiKey: "AIzaSyCYMWWDxzs6U0Q-N9Eqa-fM6fEP9DYiGwY",
   authDomain: "haichai-script-studio.firebaseapp.com",
@@ -33,187 +33,926 @@ const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 const ALLOWED_EMAIL_DOMAINS = ['haichai.vn', 'starspits.vn', 'starspirits.vn'];
-const getEmailDomain = (email = '') => email.toLowerCase().split('@').pop() || '';
-const isAllowedCompanyEmail = (email = '') => ALLOWED_EMAIL_DOMAINS.includes(getEmailDomain(email));
+
+const getEmailDomain = (email = '') =>
+  email.toLowerCase().split('@').pop() || '';
+
+const isAllowedCompanyEmail = (email = '') =>
+  ALLOWED_EMAIL_DOMAINS.includes(getEmailDomain(email));
+
 const getAppDataRef = () => doc(db, 'workspaces', 'haichai-script-studio');
 
-// --- ICONS ---
-const IconLibrary = () => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" /></svg>);
-const IconSparkles = () => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M19 17v4" /><path d="M3 5h4" /><path d="M17 19h4" /></svg>);
-const IconFileText = () => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" x2="8" y1="13" y2="13" /><line x1="16" x2="8" y1="17" y2="17" /><line x1="10" x2="8" y1="9" y2="9" /></svg>);
-const IconBook = () => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg>);
-const IconSettings = () => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>);
-const IconSearch = () => (<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>);
-const IconCheck = () => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>);
-const IconPrinter = () => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect width="12" height="8" x="6" y="14" /></svg>);
-const IconTrash = () => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></svg>);
-const IconPlus = () => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>);
+// --- TYPES & INTERFACES (Conceptual) ---
+// Script: { id, title, category, topic, angle, mainMessage, hookOptions, selectedHook, selectedHookReason, duration, scenes, ending, caption, textOnScreen, hashtags, notes, status, duplicateRiskScore, createdAt, updatedAt }
+// Topic: { id, category, topicName, angle, hookType, suggestedHook, mainMessage, whyItCanWork, avoidRepeating, duplicateRiskScore, selected }
 
-// --- CONSTANTS & DATA ---
-const DEFAULT_CONTENT_BIBLE = `[HAICHAI CONTENT BIBLE\nBộ quy chuẩn nội dung cho TikTok nhân hiệu\n(Vui lòng dán toàn bộ Content Bible thật vào đây khi sử dụng)]`;
+// --- ICONS (Inline SVGs for standalone compatibility) ---
+const IconSparkles = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+    <path d="M5 3v4" />
+    <path d="M19 17v4" />
+    <path d="M3 5h4" />
+    <path d="M17 19h4" />
+  </svg>
+);
+const IconFileText = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" x2="8" y1="13" y2="13" />
+    <line x1="16" x2="8" y1="17" y2="17" />
+    <line x1="10" x2="8" y1="9" y2="9" />
+  </svg>
+);
+const IconBook = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+  </svg>
+);
+const IconSettings = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const IconSearch = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.3-4.3" />
+  </svg>
+);
+const IconCheck = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+const IconPrinter = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect width="12" height="8" x="6" y="14" />
+  </svg>
+);
+const IconTrash = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 6h18" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    <line x1="10" x2="10" y1="11" y2="17" />
+    <line x1="14" x2="14" y1="11" y2="17" />
+  </svg>
+);
+const IconPlus = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <line x1="12" y1="5" x2="12" y2="19"></line>
+    <line x1="5" y1="12" x2="19" y2="12"></line>
+  </svg>
+);
 
-const INITIAL_SCRIPTS = [];
-const CATEGORIES = ['Góc khuất / quan điểm ngược', 'Sai lầm / bài học người chủ', 'Hậu trường thật', 'Sản phẩm / niềm tin / giấy tờ'];
+// --- CONSTANTS & MOCK DATA ---
+const DEFAULT_CONTENT_BIBLE = `[HAICHAI CONTENT BIBLE
+Bộ quy chuẩn nội dung cho TikTok nhân hiệu & kênh thương hiệu
+1. Vai trò của bộ tài liệu này...
+(Vui lòng dán toàn bộ Content Bible thật vào đây khi sử dụng)]`;
+
+const INITIAL_SCRIPTS = [
+  {
+    id: 's1',
+    title: 'Cửa hàng đẹp chưa chắc bán tốt',
+    category: 'Sai lầm / bài học người chủ',
+    topic: 'Mặt bằng',
+    angle: 'Quan điểm ngược về chọn mặt bằng',
+    mainMessage: 'Vị trí phù hợp quy trình quan trọng hơn vẻ hào nhoáng.',
+    hookOptions: [
+      'Cửa hàng đẹp chưa chắc đã bán tốt.',
+      'Tôi từng vứt đi 200 triệu tiền cọc mặt bằng chỉ vì thấy nó quá đẹp.',
+      'Đi xem mặt bằng, tôi không nhìn chỗ đông người đầu tiên.',
+      'Mặt bằng đẹp là cái bẫy lớn nhất khi mở chuỗi.',
+      'Thử chọn một góc ngã tư sầm uất, bạn sẽ khóc khi làm kho.',
+    ],
+    selectedHook:
+      'Cửa hàng đẹp chưa chắc đã bán tốt. Sau vài lần đi xem mặt bằng cho Haichai, tôi mới nhận ra có một thứ quan trọng hơn vị trí.',
+    selectedHookReason:
+      'Đánh trúng tâm lý thích mặt bằng đẹp, có mâu thuẫn nhẹ và hứa hẹn bài học thật.',
+    duration: '60s',
+    scenes: [
+      {
+        name: 'Cảnh 1: Đang đứng trước một mặt bằng đang sửa',
+        content:
+          'Nhiều người nghĩ mở chuỗi thì cứ tìm ngã tư, mặt tiền rộng là thắng. Tôi cũng từng nghĩ thế.',
+        visualSuggestion: 'Cầm bản vẽ, chỉ tay vào không gian',
+      },
+      {
+        name: 'Cảnh 2: Đi vào khu vực kho hẹp',
+        content:
+          'Nhưng ra làm thật mới thấy, cửa hàng đẹp mà không có chỗ làm kho, không có đường cho xe tải nhỏ vào giao hàng thì vận hành cực kỳ khổ.',
+        visualSuggestion: 'Quay góc hẹp, vẻ mặt nhăn nhó',
+      },
+      {
+        name: 'Cảnh 3: Đứng ở quầy thu ngân',
+        content:
+          'Với ngành này, mặt bằng phù hợp với quy trình kiểm soát quan trọng hơn một cái mặt tiền hào nhoáng.',
+        visualSuggestion: 'Gõ tay lên bàn, nói dứt khoát',
+      },
+    ],
+    ending:
+      'Mở rộng không khó bằng giữ tiêu chuẩn khi mở rộng. Bắt đầu từ cái mặt bằng.',
+    caption:
+      'Bài học xương máu khi đi tìm nhà cho Haichai. #haichai #kinhdoanh #mochuoi',
+    textOnScreen: 'Cửa hàng đẹp chưa chắc đã bán tốt',
+    hashtags: '#haichai, #kinhdoanh',
+    notes: '',
+    status: 'approved',
+    duplicateRiskScore: 10,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+const CATEGORIES = [
+  'Góc khuất / quan điểm ngược',
+  'Sai lầm / bài học người chủ',
+  'Hậu trường thật',
+  'Sản phẩm / niềm tin / giấy tờ',
+];
+
 const TOPIC_COUNT_OPTIONS = [5, 10, 20, 30];
+
 const TOPIC_DISTRIBUTIONS = {
-  5: { 'Góc khuất / quan điểm ngược': 2, 'Sai lầm / bài học người chủ': 1, 'Hậu trường thật': 1, 'Sản phẩm / niềm tin / giấy tờ': 1 },
-  10: { 'Góc khuất / quan điểm ngược': 5, 'Sai lầm / bài học người chủ': 2, 'Hậu trường thật': 2, 'Sản phẩm / niềm tin / giấy tờ': 1 },
-  20: { 'Góc khuất / quan điểm ngược': 9, 'Sai lầm / bài học người chủ': 5, 'Hậu trường thật': 4, 'Sản phẩm / niềm tin / giấy tờ': 2 },
-  30: { 'Góc khuất / quan điểm ngược': 14, 'Sai lầm / bài học người chủ': 7, 'Hậu trường thật': 6, 'Sản phẩm / niềm tin / giấy tờ': 3 },
+  5: {
+    'Góc khuất / quan điểm ngược': 2,
+    'Sai lầm / bài học người chủ': 1,
+    'Hậu trường thật': 1,
+    'Sản phẩm / niềm tin / giấy tờ': 1,
+  },
+  10: {
+    'Góc khuất / quan điểm ngược': 5,
+    'Sai lầm / bài học người chủ': 2,
+    'Hậu trường thật': 2,
+    'Sản phẩm / niềm tin / giấy tờ': 1,
+  },
+  20: {
+    'Góc khuất / quan điểm ngược': 9,
+    'Sai lầm / bài học người chủ': 5,
+    'Hậu trường thật': 4,
+    'Sản phẩm / niềm tin / giấy tờ': 2,
+  },
+  30: {
+    'Góc khuất / quan điểm ngược': 14,
+    'Sai lầm / bài học người chủ': 7,
+    'Hậu trường thật': 6,
+    'Sản phẩm / niềm tin / giấy tờ': 3,
+  },
 };
 
 const getTopicDistributionLines = (count) => {
   const distribution = TOPIC_DISTRIBUTIONS[count] || TOPIC_DISTRIBUTIONS[30];
-  return Object.entries(distribution).map(([category, quantity]) => `- ${quantity} chủ đề: ${category}`).join('\n');
+  return Object.entries(distribution)
+    .map(([category, quantity]) => `- ${quantity} chủ đề: ${category}`)
+    .join('\n');
 };
 
 const getTopicDistributionSummary = (count) => {
   const distribution = TOPIC_DISTRIBUTIONS[count] || TOPIC_DISTRIBUTIONS[30];
-  return Object.entries(distribution).map(([category, quantity]) => `${quantity} ${category}`).join(' · ');
+  return Object.entries(distribution)
+    .map(([category, quantity]) => `${quantity} ${category}`)
+    .join(' · ');
 };
 
 const EMPTY_MANUAL_SCRIPT = {
-  title: '', category: CATEGORIES[0], topic: '', mainMessage: '', selectedHook: '', selectedHookReason: 'Thêm thủ công',
-  scenes: [{ name: 'Cảnh 1', content: '', visualSuggestion: '' }], ending: '', textOnScreen: '', caption: '', notes: '',
+  title: '',
+  category: CATEGORIES[0],
+  topic: '',
+  mainMessage: '',
+  selectedHook: '',
+  selectedHookReason: 'Thêm thủ công',
+  scenes: [{ name: 'Cảnh 1', content: '', visualSuggestion: '' }],
+  ending: '',
+  textOnScreen: '',
+  caption: '',
+  notes: '',
 };
 
-// --- AI PROVIDERS & MODELS ---
+// --- REAL AI FUNCTIONS (MULTI-PROVIDER API) ---
 const AI_PROVIDERS = {
-  gemini: { name: 'Google Gemini', models: ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'] },
-  openai: { name: 'OpenAI (ChatGPT)', models: ['gpt-4o-mini', 'gpt-4o'] },
-  groq: { name: 'Groq', models: ['llama3-70b-8192', 'llama3-8b-8192', 'mixtral-8x7b-32768'] }
+  gemini: {
+    label: 'Gemini',
+    keyLabel: 'Gemini API Key',
+    placeholder: 'AIza...',
+    maxOutputTokens: 32768,
+    models: [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+    ],
+  },
+  openai: {
+    label: 'ChatGPT / OpenAI',
+    keyLabel: 'OpenAI API Key',
+    placeholder: 'sk-...',
+    maxOutputTokens: 16000,
+    models: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4o'],
+  },
+  groq: {
+    label: 'Groq',
+    keyLabel: 'Groq API Key',
+    placeholder: 'gsk_...',
+    maxOutputTokens: 8000,
+    models: [
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'mixtral-8x7b-32768',
+    ],
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    keyLabel: 'OpenRouter API Key',
+    placeholder: 'sk-or-v1-...',
+    maxOutputTokens: 12000,
+    models: [
+      'openai/gpt-4.1-mini',
+      'google/gemini-2.5-flash',
+      'anthropic/claude-3.5-sonnet',
+      'meta-llama/llama-3.3-70b-instruct',
+    ],
+  },
 };
 
-const TIMEOUT_MS = 60000;
+const DEFAULT_AI_PROVIDER = 'gemini';
+const AI_TIMEOUT_MS = 90000;
+const SCRIPT_BATCH_SIZE = 5;
 
-const extractJsonFromText = (text) => {
-  if (!text) throw new Error('AI trả về dữ liệu rỗng.');
-  const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
-  const jsonMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  try {
-    return JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
-  } catch (e) {
-    throw new Error('AI trả về định dạng không phải JSON hợp lệ.');
+const getAiProviderConfig = (provider) =>
+  AI_PROVIDERS[provider] || AI_PROVIDERS[DEFAULT_AI_PROVIDER];
+
+const getDefaultAiModel = (provider) =>
+  getAiProviderConfig(provider).models[0];
+
+const getAiKeyStorageKey = (provider) => `haichai_ai_${provider}_api_key`;
+const getAiModelStorageKey = (provider) => `haichai_ai_${provider}_model`;
+
+const normalizeApiKey = (value = '', provider = DEFAULT_AI_PROVIDER) => {
+  let key = String(value || '').trim();
+  const envNamesByProvider = {
+    gemini: [
+      'GEMINI_API_KEY',
+      'GOOGLE_API_KEY',
+      'VITE_GEMINI_API_KEY',
+      'REACT_APP_GEMINI_API_KEY',
+    ],
+    openai: [
+      'OPENAI_API_KEY',
+      'CHATGPT_API_KEY',
+      'VITE_OPENAI_API_KEY',
+      'REACT_APP_OPENAI_API_KEY',
+    ],
+    groq: ['GROQ_API_KEY', 'VITE_GROQ_API_KEY', 'REACT_APP_GROQ_API_KEY'],
+    openrouter: [
+      'OPENROUTER_API_KEY',
+      'VITE_OPENROUTER_API_KEY',
+      'REACT_APP_OPENROUTER_API_KEY',
+    ],
+  };
+
+  const envNames = envNamesByProvider[provider] || [];
+  if (envNames.length > 0) {
+    const assignmentMatch = key.match(
+      new RegExp(`(?:${envNames.join('|')})\\s*=\\s*['"]?([^'"\\s]+)`, 'i')
+    );
+    if (assignmentMatch?.[1]) key = assignmentMatch[1];
   }
+
+  const rawPatterns = {
+    gemini: /AIza[0-9A-Za-z_-]{20,}/,
+    openai: /sk-[0-9A-Za-z_-]{20,}/,
+    groq: /gsk_[0-9A-Za-z_-]{20,}/,
+    openrouter: /sk-or-v1-[0-9A-Za-z_-]{20,}/,
+  };
+
+  const rawKeyMatch = key.match(rawPatterns[provider]);
+  if (rawKeyMatch?.[0]) key = rawKeyMatch[0];
+
+  return key.replace(/^['"]|['"]$/g, '').trim();
 };
 
-const fetchWithTimeout = async (url, options = {}, timeoutMs = TIMEOUT_MS) => {
+const getStoredAIConfig = () => {
+  if (typeof window === 'undefined') {
+    return {
+      provider: DEFAULT_AI_PROVIDER,
+      apiKey: '',
+      model: getDefaultAiModel(DEFAULT_AI_PROVIDER),
+    };
+  }
+
+  const provider =
+    localStorage.getItem('haichai_ai_provider') || DEFAULT_AI_PROVIDER;
+  const safeProvider = AI_PROVIDERS[provider] ? provider : DEFAULT_AI_PROVIDER;
+  const legacyGeminiKey = localStorage.getItem('gemini_api_key') || '';
+  const storedKey =
+    localStorage.getItem(getAiKeyStorageKey(safeProvider)) ||
+    (safeProvider === 'gemini' ? legacyGeminiKey : '');
+  const storedModel =
+    localStorage.getItem(getAiModelStorageKey(safeProvider)) ||
+    getDefaultAiModel(safeProvider);
+
+  return {
+    provider: safeProvider,
+    apiKey: normalizeApiKey(storedKey, safeProvider),
+    model: storedModel.trim() || getDefaultAiModel(safeProvider),
+  };
+};
+
+// Gemini và vài provider OpenAI-compatible chỉ nhận một tập con JSON Schema.
+// Hàm này giữ cấu trúc field nhưng bỏ các phần dễ gây lỗi hoặc làm prompt dài.
+const sanitizeAISchema = (schema, insideProperties = false) => {
+  if (Array.isArray(schema)) return schema.map((item) => sanitizeAISchema(item));
+  if (!schema || typeof schema !== 'object') return schema;
+
+  if (insideProperties) {
+    const cleanedProperties = {};
+    Object.entries(schema).forEach(([propertyName, propertySchema]) => {
+      cleanedProperties[propertyName] = sanitizeAISchema(propertySchema);
+    });
+    return cleanedProperties;
+  }
+
+  const allowedKeys = new Set([
+    'type',
+    'format',
+    'items',
+    'properties',
+    'required',
+    'enum',
+    'nullable',
+    'propertyOrdering',
+    'minimum',
+    'maximum',
+    'minItems',
+    'maxItems',
+  ]);
+
+  const cleaned = {};
+  Object.entries(schema).forEach(([key, value]) => {
+    if (!allowedKeys.has(key)) return;
+    cleaned[key] = key === 'properties'
+      ? sanitizeAISchema(value, true)
+      : sanitizeAISchema(value);
+  });
+
+  return cleaned;
+};
+
+const getAIResponseText = (provider, result) => {
+  if (provider === 'gemini') {
+    const candidate = result?.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    const text = parts
+      .map((part) => part?.text || '')
+      .join('\n')
+      .trim();
+
+    if (text) return text;
+
+    const finishReason = candidate?.finishReason || 'UNKNOWN';
+    const blockReason = result?.promptFeedback?.blockReason;
+    throw new Error(
+      `AI có phản hồi nhưng không có nội dung text. finishReason=${finishReason}${
+        blockReason ? `, blockReason=${blockReason}` : ''
+      }.`
+    );
+  }
+
+  const content = result?.choices?.[0]?.message?.content;
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) => part?.text || '')
+      .join('\n')
+      .trim();
+    if (text) return text;
+  }
+
+  if (typeof content === 'string' && content.trim()) return content.trim();
+
+  const finishReason = result?.choices?.[0]?.finish_reason || 'UNKNOWN';
+  throw new Error(
+    `AI có phản hồi nhưng không có nội dung text. finishReason=${finishReason}.`
+  );
+};
+
+const fetchWithTimeout = async (
+  url,
+  options = {},
+  timeoutMs = AI_TIMEOUT_MS
+) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error(`Kết nối tới AI quá hạn (${timeoutMs/1000}s). Vui lòng thử lại.`);
+    if (error.name === 'AbortError') {
+      throw new Error(
+        `AI không phản hồi sau ${Math.round(
+          timeoutMs / 1000
+        )} giây. Hãy test key/model ở Cài đặt & Dữ liệu trước khi tạo hàng loạt.`
+      );
+    }
     throw error;
   } finally {
     clearTimeout(timeoutId);
   }
 };
 
-// --- CORE AI ENGINE ---
-const callUnifiedAI = async (provider, model, keys, systemPrompt, userPrompt) => {
-  const apiKey = keys[provider];
-  if (!apiKey) throw new Error(`Vui lòng nhập API Key cho ${AI_PROVIDERS[provider].name} trong Cài đặt.`);
+const normalizeAIError = (provider, status, message) => {
+  const label = getAiProviderConfig(provider).label;
+  const lowerMessage = String(message || '').toLowerCase();
 
-  const finalSystemPrompt = `${systemPrompt}\n\nIMPORTANT: You MUST return a valid raw JSON object. Do not wrap it in markdown. The JSON must follow the requested structure exactly.`;
-
-  let url, headers, body;
-
-  if (provider === 'gemini') {
-    url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    headers = { 'Content-Type': 'application/json' };
-    body = JSON.stringify({
-      systemInstruction: { parts: [{ text: finalSystemPrompt }] },
-      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
-    });
-  } else {
-    // OpenAI or Groq
-    url = provider === 'groq' ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
-    headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    };
-    body = JSON.stringify({
-      model: model,
-      messages: [
-        { role: 'system', content: finalSystemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7
-    });
+  if (
+    lowerMessage.includes('api key not valid') ||
+    lowerMessage.includes('api_key_invalid') ||
+    lowerMessage.includes('invalid api key')
+  ) {
+    return `${label} API Key không hợp lệ (${status}). Hãy kiểm tra lại key ở Cài đặt & Dữ liệu.`;
   }
 
-  const response = await fetchWithTimeout(url, { method: 'POST', headers, body });
-  
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(`Lỗi API (${response.status}): ${errData?.error?.message || errData?.message || 'Unkown error'}`);
+  if (
+    lowerMessage.includes('referer') ||
+    lowerMessage.includes('http referrer') ||
+    lowerMessage.includes('ip address') ||
+    lowerMessage.includes('application restrictions')
+  ) {
+    return `${label} API Key đang bị giới hạn domain/IP (${status}). Hãy thêm đúng domain web đang chạy hoặc tạo key mới.`;
   }
 
-  const result = await response.json();
-  let textOutput = '';
+  if (status === 400)
+    return `${label} báo request chưa hợp lệ (${status}): ${
+      message || 'Kiểm tra model/schema/prompt.'
+    }`;
+  if (status === 401 || status === 403)
+    return `${label} API Key sai, bị chặn, hoặc chưa được cấp quyền (${status}).`;
+  if (status === 404)
+    return `Model không tồn tại hoặc key chưa có quyền dùng model này trên ${label} (${status}).`;
+  if (status === 429)
+    return `${label} đang bị rate limit. Đợi 30–60 giây rồi thử lại, hoặc chọn model/provider khác.`;
+  if (status >= 500)
+    return `${label} đang lỗi máy chủ (${status}). Thử lại sau hoặc đổi provider/model.`;
 
-  if (provider === 'gemini') {
-    textOutput = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  } else {
-    textOutput = result?.choices?.[0]?.message?.content || '';
-  }
-
-  return extractJsonFromText(textOutput);
+  return message || `Lỗi ${label} (${status})`;
 };
 
-// Tách ra chạy từng kịch bản song song để tăng tốc độ và tránh timeout
-const generateSingleScriptFromAI = async (provider, model, keys, topic, bible, currentScripts) => {
-  const systemPrompt = `Bạn là Script Writer kiêm Content Editor cho kênh TikTok nhân hiệu Haichai.
-Viết kịch bản chi tiết cho chủ đề sau. Bám Content Bible và kết quả scan để tránh trùng.
-Yêu cầu:
-- Kịch bản TikTok 60-75 giây, giọng thật, tỉnh, có trải nghiệm, không quảng cáo rác.
-- Tạo 5 phương án hook, chọn 1 hook tốt nhất.
-- Trả về JSON với key "script" chứa Object có format sau:
-{
-  "title": "...", "mainMessage": "...", "hookOptions": ["..."], "selectedHook": "...", "selectedHookReason": "...", "duration": "60s",
-  "scenes": [{ "name": "Cảnh 1", "content": "...", "visualSuggestion": "..." }],
-  "ending": "...", "caption": "...", "textOnScreen": "...", "hashtags": "...", "notes": "...", "duplicateRiskScore": 0
-}`;
+const isTransientAIError = (status) => [408, 409, 429, 500, 502, 503, 504].includes(status);
 
-  const userPrompt = `Content Bible:\n${bible}\n\nThư viện cũ (Tránh trùng):\n${JSON.stringify(currentScripts.map(s => s.topic))}\n\nChủ đề cần viết:\n${JSON.stringify(topic)}`;
+const extractJsonFromText = (text) => {
+  if (!text)
+    throw new Error(
+      'AI trả về dữ liệu rỗng. Có thể prompt quá dài hoặc response bị chặn.'
+    );
 
-  const res = await callUnifiedAI(provider, model, keys, systemPrompt, userPrompt);
-  if (!res || !res.script) throw new Error("AI không trả về cấu trúc kịch bản đúng chuẩn.");
-  
+  const cleaned = text
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .trim();
+  const jsonMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  return JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
+};
+
+const getSchemaInstruction = (schema) => {
+  if (!schema) return '';
+  const cleanSchema = sanitizeAISchema(schema);
+  return `
+
+QUY TẮC TRẢ VỀ BẮT BUỘC:
+- Chỉ trả về JSON hợp lệ, không markdown, không giải thích thêm.
+- Không bọc trong \`\`\`json.
+- JSON phải parse được bằng JSON.parse().
+- JSON phải bám schema này:
+${JSON.stringify(cleanSchema)}`;
+};
+
+const buildAIRequest = ({
+  provider,
+  apiKey,
+  model,
+  systemPrompt,
+  userPrompt,
+  schema,
+  useJsonMode = true,
+}) => {
+  const fullUserPrompt = `${userPrompt}${getSchemaInstruction(schema)}`;
+
+  if (provider === 'gemini') {
+    return {
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      options: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: fullUserPrompt }],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            maxOutputTokens: getAiProviderConfig(provider).maxOutputTokens,
+            temperature: 0.7,
+          },
+        }),
+      },
+    };
+  }
+
+  const endpoints = {
+    openai: 'https://api.openai.com/v1/chat/completions',
+    groq: 'https://api.groq.com/openai/v1/chat/completions',
+    openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+  };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+
+  if (provider === 'openrouter' && typeof window !== 'undefined') {
+    headers['HTTP-Referer'] = window.location.origin;
+    headers['X-Title'] = 'Haichai Script Studio';
+  }
+
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: fullUserPrompt },
+    ],
+    temperature: 0.7,
+    max_tokens: getAiProviderConfig(provider).maxOutputTokens,
+  };
+
+  if (useJsonMode) {
+    body.response_format = { type: 'json_object' };
+  }
+
   return {
-    id: `scr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    topicId: topic.id,
-    category: topic.category,
-    topic: topic.topicName,
-    angle: topic.angle,
-    status: 'draft',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...res.script
+    url: endpoints[provider],
+    options: {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    },
   };
 };
 
-const generateTopicsFromAI = async (provider, model, keys, bible, currentScripts, topicCount = 30) => {
-  const safeCount = TOPIC_COUNT_OPTIONS.includes(Number(topicCount)) ? Number(topicCount) : 30;
-  const systemPrompt = `Bạn là Content Strategist cho TikTok nhân hiệu. Dựa trên Content Bible, tạo CHÍNH XÁC ${safeCount} chủ đề mới.
-Tuyệt đối chỉ trả về JSON có key "topics" là một mảng ${safeCount} phần tử.
-Cấu trúc 1 phần tử: { "category": "...", "topicName": "...", "angle": "...", "hookType": "...", "suggestedHook": "...", "mainMessage": "...", "whyItCanWork": "...", "avoidRepeating": "...", "duplicateRiskScore": 0 }`;
+const callAIWithRetry = async (
+  systemPrompt,
+  userPrompt,
+  schema,
+  retries = 2
+) => {
+  const { provider, apiKey, model } = getStoredAIConfig();
+  const label = getAiProviderConfig(provider).label;
 
-  const userPrompt = `Tạo đúng tỉ lệ sau:\n${getTopicDistributionLines(safeCount)}\n\nContent Bible:\n${bible}\n\nCác chủ đề cũ (Tránh trùng):\n${JSON.stringify(currentScripts.map(s => s.topic))}`;
+  if (!apiKey) {
+    throw new Error(
+      `Bạn chưa nhập ${getAiProviderConfig(provider).keyLabel}. Vào “Cài đặt & Dữ liệu” để nhập key trước.`
+    );
+  }
 
-  const result = await callUnifiedAI(provider, model, keys, systemPrompt, userPrompt);
+  if (!model) {
+    throw new Error('Bạn chưa chọn model AI ở Cài đặt & Dữ liệu.');
+  }
+
+  let lastError;
+  let useJsonMode = true;
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      const { url, options } = buildAIRequest({
+        provider,
+        apiKey,
+        model,
+        systemPrompt,
+        userPrompt,
+        schema,
+        useJsonMode,
+      });
+
+      const response = await fetchWithTimeout(url, options);
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        const rawMessage = errData?.error?.message || errData?.message || '';
+        const err = new Error(normalizeAIError(provider, response.status, rawMessage));
+        err.status = response.status;
+        err.rawMessage = rawMessage;
+        throw err;
+      }
+
+      const result = await response.json();
+      const responseText = getAIResponseText(provider, result);
+      return extractJsonFromText(responseText);
+    } catch (error) {
+      lastError = error;
+      console.error(`${label} ${model} failed:`, error);
+
+      if (
+        useJsonMode &&
+        provider !== 'gemini' &&
+        error.status === 400 &&
+        String(error.rawMessage || error.message).toLowerCase().includes('response_format')
+      ) {
+        useJsonMode = false;
+        continue;
+      }
+
+      if ([401, 403, 404].includes(error.status)) throw error;
+      if (!isTransientAIError(error.status) || i === retries - 1) break;
+
+      await new Promise((res) => setTimeout(res, 1000 * (i + 1)));
+    }
+  }
+
+  throw lastError || new Error(`Không gọi được ${label}.`);
+};
+
+const generateTopicsFromAI = async (bible, currentScripts, topicCount = 30) => {
+  const safeTopicCount = TOPIC_COUNT_OPTIONS.includes(Number(topicCount))
+    ? Number(topicCount)
+    : 30;
+  const distributionLines = getTopicDistributionLines(safeTopicCount);
+
+  const systemPrompt = `Bạn là Content Strategist cho kênh TikTok nhân hiệu Haichai.
+Dựa trên Content Bible và thư viện kịch bản cũ, hãy tạo ra CHÍNH XÁC ${safeTopicCount} chủ đề mới theo đúng tỉ lệ sau:
+${distributionLines}
+
+TUYỆT ĐỐI QUAN TRỌNG:
+- Chỉ trả về JSON thuần, không markdown, không giải thích.
+- Không bọc JSON trong \`\`\`json.
+- JSON phải parse được bằng JSON.parse().
+- BẮT BUỘC mảng topics có đúng ${safeTopicCount} items.
+- Không trùng với các chủ đề đã có trong thư viện.
+- Không biến nội dung thành quảng cáo rượu, không cổ vũ uống rượu.
+- Ưu tiên hook: một con số, quan điểm ngược, gây tò mò, khơi gợi nỗi đau, trích lời nói thật.
+- duplicateRiskScore là điểm đánh giá từ 0-100 về khả năng trùng lặp ý tưởng với thư viện cũ.`;
+
+  const oldTopics = currentScripts.map((s) => s.topic).filter(Boolean);
+
+  const userPrompt = `Content Bible:\n${bible}\n\nThư viện kịch bản cũ cần tránh trùng:\n${JSON.stringify(
+    oldTopics
+  )}\n\nHãy tạo ĐẦY ĐỦ ${safeTopicCount} chủ đề ngay bây giờ theo đúng tỉ lệ:\n${distributionLines}\n\nCHỈ TRẢ VỀ JSON THUẦN THEO FORMAT SAU:
+{
+  "topics": [
+    {
+      "category": "Góc khuất / quan điểm ngược",
+      "topicName": "...",
+      "angle": "...",
+      "hookType": "...",
+      "suggestedHook": "...",
+      "mainMessage": "...",
+      "whyItCanWork": "...",
+      "avoidRepeating": "...",
+      "duplicateRiskScore": 0
+    }
+  ]
+}
+
+BẮT BUỘC:
+- topics phải có đúng ${safeTopicCount} items.
+- Mỗi item phải có đủ các field: category, topicName, angle, hookType, suggestedHook, mainMessage, whyItCanWork, avoidRepeating, duplicateRiskScore.
+- category chỉ được nằm trong 4 nhóm nội dung đã nêu ở trên.
+- duplicateRiskScore phải là số nguyên từ 0 đến 100.`;
+
+  // TỐI ƯU TỐC ĐỘ:
+  // Không truyền schema/responseSchema cho mục Tạo chủ đề nữa.
+  // Gọi 1 lần duy nhất để tạo đủ số chủ đề đã chọn, thay vì chia nhiều lần tuần tự.
+  const result = await callAIWithRetry(systemPrompt, userPrompt, null, 1);
   const rawTopics = Array.isArray(result?.topics) ? result.topics : [];
-  
-  if (rawTopics.length === 0) throw new Error('AI không trả về mảng topics.');
 
-  return rawTopics.slice(0, safeCount).map((t, index) => ({
+  if (rawTopics.length === 0) {
+    throw new Error(
+      'AI đã kết nối được nhưng không trả về mảng topics. Hãy thử lại, đổi model hoặc rút gọn Content Bible.'
+    );
+  }
+
+  return rawTopics.slice(0, safeTopicCount).map((t, index) => ({
     id: `top_${Date.now()}_${index}`,
     ...t,
     selected: false,
   }));
+};
+
+const generateScriptsBatchFromAI = async (topics, bible, currentScripts) => {
+  const systemPrompt = `Bạn là Script Writer kiêm Content Editor cho kênh TikTok nhân hiệu Haichai.
+Nhiệm vụ của bạn là viết kịch bản chi tiết cho CÁC chủ đề được cung cấp. Bắt buộc bám Content Bible và thư viện cũ để tránh trùng lặp.
+
+Yêu cầu CHUNG cho mỗi kịch bản:
+- Viết kịch bản TikTok 60–75 giây.
+- Giọng thật, tỉnh, có trải nghiệm, không quảng cáo, không kêu gọi mua hàng, không cổ vũ uống rượu.
+- Mỗi video chỉ có một thông điệp chính.
+- Tạo 5 phương án hook, chọn 1 hook tốt nhất và giải thích.
+- duplicateRiskScore là mức độ rủi ro trùng lặp với thư viện cũ (0-100).
+
+TUYỆT ĐỐI QUAN TRỌNG: Đầu vào có bao nhiêu chủ đề, bạn PHẢI trả về mảng 'scripts' chứa đúng bấy nhiêu kịch bản.`;
+
+  const userPrompt = `Content Bible:\n${bible}\n\nThư viện cũ:\n${JSON.stringify(
+    currentScripts.map((s) => ({ title: s.title, topic: s.topic }))
+  )}\n\nDANH SÁCH CHỦ ĐỀ CẦN VIẾT (${topics.length} chủ đề):\n${JSON.stringify(
+    topics
+  )}\n\nHãy viết kịch bản cho TẤT CẢ các chủ đề trên.`;
+
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      scripts: {
+        type: 'ARRAY',
+        description: `Mảng này BẮT BUỘC phải chứa đúng ${topics.length} kịch bản tương ứng với đầu vào.`,
+        items: {
+          type: 'OBJECT',
+          properties: {
+            topicId: {
+              type: 'STRING',
+              description: 'Mã ID của chủ đề tương ứng ở đầu vào',
+            },
+            title: { type: 'STRING' },
+            mainMessage: { type: 'STRING' },
+            hookOptions: { type: 'ARRAY', items: { type: 'STRING' } },
+            selectedHook: { type: 'STRING' },
+            selectedHookReason: { type: 'STRING' },
+            duration: { type: 'STRING' },
+            scenes: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  name: { type: 'STRING' },
+                  content: { type: 'STRING' },
+                  visualSuggestion: { type: 'STRING' },
+                },
+              },
+            },
+            ending: { type: 'STRING' },
+            caption: { type: 'STRING' },
+            textOnScreen: { type: 'STRING' },
+            hashtags: { type: 'STRING' },
+            notes: { type: 'STRING' },
+            duplicateRiskScore: { type: 'INTEGER' },
+          },
+        },
+      },
+    },
+    required: ['scripts'],
+  };
+
+  const result = await callAIWithRetry(systemPrompt, userPrompt, schema);
+  const generatedScripts = Array.isArray(result?.scripts) ? result.scripts : [];
+
+  if (generatedScripts.length === 0) {
+    throw new Error(
+      'AI đã kết nối được nhưng không trả về mảng scripts cho cụm kịch bản này.'
+    );
+  }
+
+  // Map dữ liệu AI trả về với Topic ban đầu và đảm bảo không thiếu field UI cần hiển thị.
+  return generatedScripts.map((rawScript) => {
+    const originalTopic =
+      topics.find((t) => t.id === rawScript.topicId) || topics[0];
+
+    const hookOptions = Array.isArray(rawScript.hookOptions)
+      ? rawScript.hookOptions.filter(Boolean)
+      : [];
+    const scenes =
+      Array.isArray(rawScript.scenes) && rawScript.scenes.length > 0
+        ? rawScript.scenes.map((scene, index) => ({
+            name: scene?.name || `Cảnh ${index + 1}`,
+            content: scene?.content || '',
+            visualSuggestion: scene?.visualSuggestion || '',
+          }))
+        : [{ name: 'Cảnh 1', content: '', visualSuggestion: '' }];
+
+    return {
+      id: `scr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      topicId: rawScript.topicId || originalTopic.id,
+      title: rawScript.title || originalTopic.topicName || 'Kịch bản chưa có tiêu đề',
+      category: originalTopic.category || CATEGORIES[0],
+      topic: originalTopic.topicName || '',
+      angle: originalTopic.angle || '',
+      mainMessage:
+        rawScript.mainMessage || originalTopic.mainMessage || '',
+      hookOptions,
+      selectedHook:
+        rawScript.selectedHook || hookOptions[0] || originalTopic.suggestedHook || '',
+      selectedHookReason: rawScript.selectedHookReason || '',
+      duration: rawScript.duration || '60–75s',
+      scenes,
+      ending: rawScript.ending || '',
+      caption: rawScript.caption || '',
+      textOnScreen: rawScript.textOnScreen || rawScript.title || originalTopic.topicName || '',
+      hashtags: rawScript.hashtags || '',
+      notes: rawScript.notes || '',
+      duplicateRiskScore: Number.isFinite(Number(rawScript.duplicateRiskScore))
+        ? Number(rawScript.duplicateRiskScore)
+        : Number(originalTopic.duplicateRiskScore) || 0,
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  });
 };
 
 // --- MAIN APP COMPONENT ---
@@ -223,31 +962,44 @@ export default function App() {
   const [scripts, setScripts] = useState([]);
   const [viewingScript, setViewingScript] = useState(null);
 
-  // Search & Filter
+  // Library State
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCat, setFilterCat] = useState('All');
 
-  // Generation States
+  // Topic Gen State
   const [generatedTopics, setGeneratedTopics] = useState([]);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
   const [isGeneratingTopics, setIsGeneratingTopics] = useState(false);
   const [topicCount, setTopicCount] = useState(30);
-  
   const [customTopicText, setCustomTopicText] = useState('');
   const [customTopicCategory, setCustomTopicCategory] = useState(CATEGORIES[0]);
-  const [isGeneratingCustomScript, setIsGeneratingCustomScript] = useState(false);
+  const [isGeneratingCustomScript, setIsGeneratingCustomScript] =
+    useState(false);
 
+  // Script Gen State
   const [isGeneratingScripts, setIsGeneratingScripts] = useState(false);
   const [draftScripts, setDraftScripts] = useState([]);
   const [generationStatus, setGenerationStatus] = useState('');
 
-  // UI States
+  // Manual Add State
   const [isAddingManual, setIsAddingManual] = useState(false);
   const [manualScript, setManualScript] = useState(EMPTY_MANUAL_SCRIPT);
-  const [modal, setModal] = useState({ isOpen: false, type: 'alert', title: '', message: '', onConfirm: null });
 
-  // Cloud Sync States
+  // Custom Modal UI State
+  const [modal, setModal] = useState({
+    isOpen: false,
+    type: 'alert',
+    title: '',
+    message: '',
+    onConfirm: null,
+  });
+
+  const showAlert = (title, message) =>
+    setModal({ isOpen: true, type: 'alert', title, message, onConfirm: null });
+  const showConfirm = (title, message, onConfirm) =>
+    setModal({ isOpen: true, type: 'confirm', title, message, onConfirm });
+  const closeModal = () => setModal({ ...modal, isOpen: false });
+
+  // Firebase Auth + Firestore Sync State
   const [authLoading, setAuthLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   const [authError, setAuthError] = useState('');
@@ -255,250 +1007,728 @@ export default function App() {
   const [cloudReady, setCloudReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState('Chưa đăng nhập Firebase');
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
-  const latestDataRef = useRef({ bible: DEFAULT_CONTENT_BIBLE, scripts: [], draftScripts: [], generatedTopics: [] });
+  const latestDataRef = useRef({
+    bible: DEFAULT_CONTENT_BIBLE,
+    scripts: [],
+    draftScripts: [],
+    generatedTopics: [],
+  });
   const syncingFromCloudRef = useRef(false);
 
-  // --- AI CONFIGURATION STATE ---
-  const [aiProvider, setAiProvider] = useState('gemini');
-  const [aiModel, setAiModel] = useState(AI_PROVIDERS.gemini.models[0]);
-  const [apiKeys, setApiKeys] = useState({ gemini: '', openai: '', groq: '' });
+  // AI key chỉ lưu ở máy người dùng, không đẩy lên Firestore.
+  const [aiProvider, setAiProvider] = useState(DEFAULT_AI_PROVIDER);
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiModel, setAiModel] = useState(getDefaultAiModel(DEFAULT_AI_PROVIDER));
+  const [aiKeyStatus, setAiKeyStatus] = useState('');
+  const [isTestingAiKey, setIsTestingAiKey] = useState(false);
 
-  const showAlert = (title, message) => setModal({ isOpen: true, type: 'alert', title, message, onConfirm: null });
-  const showConfirm = (title, message, onConfirm) => setModal({ isOpen: true, type: 'confirm', title, message, onConfirm });
-  const closeModal = () => setModal({ ...modal, isOpen: false });
+  const handleSignInWithGoogle = async () => {
+    setAuthError('');
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const email = result.user?.email || '';
 
-  // Load local configuration
+      if (!isAllowedCompanyEmail(email)) {
+        await signOut(auth);
+        setCurrentUser(null);
+        setAuthError(
+          `Email ${
+            email || 'này'
+          } không được phép. Chỉ cho phép @haichai.vn, @starspits.vn hoặc @starspirits.vn.`
+        );
+        return;
+      }
+
+      setCurrentUser(result.user);
+    } catch (error) {
+      console.error('Firebase sign-in error:', error);
+      setAuthError(error.message || 'Không đăng nhập được bằng Google.');
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut(auth);
+    setCurrentUser(null);
+    setCloudReady(false);
+    setSyncStatus('Đã đăng xuất Firebase');
+  };
+
+  const handleProviderChange = (provider) => {
+    const safeProvider = AI_PROVIDERS[provider] ? provider : DEFAULT_AI_PROVIDER;
+    const savedKey =
+      localStorage.getItem(getAiKeyStorageKey(safeProvider)) ||
+      (safeProvider === 'gemini' ? localStorage.getItem('gemini_api_key') || '' : '');
+    const savedModel =
+      localStorage.getItem(getAiModelStorageKey(safeProvider)) ||
+      getDefaultAiModel(safeProvider);
+
+    localStorage.setItem('haichai_ai_provider', safeProvider);
+    setAiProvider(safeProvider);
+    setAiApiKey(savedKey);
+    setAiModel(savedModel);
+    setAiKeyStatus('');
+  };
+
+  const handleSaveAiKey = () => {
+    const key = normalizeApiKey(aiApiKey, aiProvider);
+    const model = aiModel.trim() || getDefaultAiModel(aiProvider);
+
+    localStorage.setItem('haichai_ai_provider', aiProvider);
+    localStorage.setItem(getAiModelStorageKey(aiProvider), model);
+
+    if (!key) {
+      localStorage.removeItem(getAiKeyStorageKey(aiProvider));
+      if (aiProvider === 'gemini') localStorage.removeItem('gemini_api_key');
+      setAiApiKey('');
+      setAiModel(model);
+      setAiKeyStatus(`Đã xoá ${getAiProviderConfig(aiProvider).keyLabel} trên máy này.`);
+      return;
+    }
+
+    localStorage.setItem(getAiKeyStorageKey(aiProvider), key);
+    if (aiProvider === 'gemini') localStorage.setItem('gemini_api_key', key);
+    setAiApiKey(key);
+    setAiModel(model);
+    setAiKeyStatus(`Đã lưu ${getAiProviderConfig(aiProvider).keyLabel} và model ${model}.`);
+  };
+
+  const handleTestAiKey = async () => {
+    const key = normalizeApiKey(aiApiKey, aiProvider);
+    const model = aiModel.trim() || getDefaultAiModel(aiProvider);
+
+    if (!key) {
+      setAiKeyStatus('Bạn chưa nhập key để test.');
+      return;
+    }
+
+    localStorage.setItem('haichai_ai_provider', aiProvider);
+    localStorage.setItem(getAiKeyStorageKey(aiProvider), key);
+    localStorage.setItem(getAiModelStorageKey(aiProvider), model);
+    if (aiProvider === 'gemini') localStorage.setItem('gemini_api_key', key);
+
+    setAiApiKey(key);
+    setAiModel(model);
+    setIsTestingAiKey(true);
+    setAiKeyStatus(`Đang test ${getAiProviderConfig(aiProvider).label} / ${model}...`);
+
+    try {
+      const result = await callAIWithRetry(
+        'Bạn là hệ thống kiểm tra kết nối. Chỉ trả JSON hợp lệ.',
+        'Trả về {"ok":true,"message":"AI connected"}',
+        {
+          type: 'OBJECT',
+          properties: {
+            ok: { type: 'BOOLEAN' },
+            message: { type: 'STRING' },
+          },
+          required: ['ok', 'message'],
+        },
+        1
+      );
+
+      if (result?.ok) {
+        setAiKeyStatus(`${getAiProviderConfig(aiProvider).label} API Key và model dùng được.`);
+      } else {
+        setAiKeyStatus(
+          'AI có phản hồi nhưng JSON không đúng format mong đợi.'
+        );
+      }
+    } catch (error) {
+      console.error('AI key test error:', error);
+      setAiKeyStatus(error.message || 'Không test được AI API Key/model.');
+    } finally {
+      setIsTestingAiKey(false);
+    }
+  };
+
+  // Load local backup trước để không mất dữ liệu khi chưa đăng nhập hoặc mất mạng.
   useEffect(() => {
     try {
       const savedBible = localStorage.getItem('haichai_bible');
       if (savedBible) setBible(savedBible);
+
       const savedScripts = localStorage.getItem('haichai_scripts');
-      setScripts(savedScripts ? JSON.parse(savedScripts) : INITIAL_SCRIPTS);
+      if (savedScripts) {
+        setScripts(JSON.parse(savedScripts));
+      } else {
+        setScripts(INITIAL_SCRIPTS);
+      }
+
       const savedDrafts = localStorage.getItem('haichai_drafts');
       if (savedDrafts) setDraftScripts(JSON.parse(savedDrafts));
+
       const savedTopics = localStorage.getItem('haichai_generated_topics');
       if (savedTopics) setGeneratedTopics(JSON.parse(savedTopics));
 
-      // Load AI Config
-      const savedKeys = localStorage.getItem('haichai_api_keys');
-      if (savedKeys) setApiKeys(JSON.parse(savedKeys));
-      const savedProvider = localStorage.getItem('haichai_ai_provider');
-      if (savedProvider && AI_PROVIDERS[savedProvider]) setAiProvider(savedProvider);
-      const savedModel = localStorage.getItem('haichai_ai_model');
-      if (savedModel) setAiModel(savedModel);
-
-    } catch (e) {
-      console.error('Lỗi load local:', e);
+      const savedAIConfig = getStoredAIConfig();
+      setAiProvider(savedAIConfig.provider);
+      setAiApiKey(savedAIConfig.apiKey);
+      setAiModel(savedAIConfig.model);
+    } catch (error) {
+      console.error('LocalStorage load error:', error);
+      setScripts(INITIAL_SCRIPTS);
     } finally {
       setIsLocalLoaded(true);
     }
   }, []);
 
-  // Sync to local
-  useEffect(() => {
-    if (!isLocalLoaded) return;
-    localStorage.setItem('haichai_bible', bible);
-    localStorage.setItem('haichai_scripts', JSON.stringify(scripts));
-    localStorage.setItem('haichai_drafts', JSON.stringify(draftScripts));
-    localStorage.setItem('haichai_generated_topics', JSON.stringify(generatedTopics));
-    
-    localStorage.setItem('haichai_api_keys', JSON.stringify(apiKeys));
-    localStorage.setItem('haichai_ai_provider', aiProvider);
-    localStorage.setItem('haichai_ai_model', aiModel);
-  }, [isLocalLoaded, bible, scripts, draftScripts, generatedTopics, apiKeys, aiProvider, aiModel]);
-
-  // Handle Provider Change
-  const handleProviderChange = (e) => {
-    const prov = e.target.value;
-    setAiProvider(prov);
-    setAiModel(AI_PROVIDERS[prov].models[0]); // Reset to first model of provider
-  };
-
-  const handleKeyChange = (provider, value) => {
-    setApiKeys(prev => ({ ...prev, [provider]: value }));
-  };
-
-  // Auth & Cloud logic... (Giữ nguyên cấu trúc của bạn)
+  // Lắng nghe trạng thái đăng nhập Firebase.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setAuthLoading(false);
+
       if (!user) {
         setCurrentUser(null);
         setCloudReady(false);
         setSyncStatus('Chưa đăng nhập Firebase');
         return;
       }
+
       const email = user.email || '';
       if (!isAllowedCompanyEmail(email)) {
         await signOut(auth);
         setCurrentUser(null);
-        setAuthError(`Email không được phép.`);
+        setCloudReady(false);
+        setAuthError(
+          `Email ${
+            email || 'này'
+          } không được phép. Chỉ cho phép @haichai.vn, @starspits.vn hoặc @starspirits.vn.`
+        );
+        setSyncStatus('Email không thuộc domain công ty');
         return;
       }
+
       setAuthError('');
       setCurrentUser(user);
     });
+
     return () => unsubscribe();
   }, []);
 
+  // Giữ dữ liệu mới nhất trong ref để lần đầu tạo document Firestore không bị stale state.
   useEffect(() => {
     latestDataRef.current = { bible, scripts, draftScripts, generatedTopics };
   }, [bible, scripts, draftScripts, generatedTopics]);
 
+  // Luôn lưu một bản backup local. Nguồn chính vẫn là Firestore sau khi đăng nhập.
+  useEffect(() => {
+    if (!isLocalLoaded) return;
+
+    localStorage.setItem('haichai_bible', bible);
+    localStorage.setItem('haichai_scripts', JSON.stringify(scripts));
+    localStorage.setItem('haichai_drafts', JSON.stringify(draftScripts));
+    localStorage.setItem(
+      'haichai_generated_topics',
+      JSON.stringify(generatedTopics)
+    );
+  }, [isLocalLoaded, bible, scripts, draftScripts, generatedTopics]);
+
+  // Tải dữ liệu từ Firestore sau khi đăng nhập Google bằng email công ty.
   useEffect(() => {
     if (!currentUser || !isLocalLoaded) return;
+
+    setSyncStatus('Đang kết nối Firestore...');
+    setCloudReady(false);
+
     const ref = getAppDataRef();
-    const unsubscribe = onSnapshot(ref, async (snapshot) => {
-      syncingFromCloudRef.current = true;
-      try {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (typeof data.bible === 'string') setBible(data.bible);
-          if (Array.isArray(data.scripts)) setScripts(data.scripts);
-          if (Array.isArray(data.draftScripts)) setDraftScripts(data.draftScripts);
-          if (Array.isArray(data.generatedTopics)) setGeneratedTopics(data.generatedTopics);
-          setSyncStatus('Đã tải từ Firebase');
-        } else {
-          await setDoc(ref, { ...latestDataRef.current, ownerEmail: currentUser.email, updatedAt: serverTimestamp() }, { merge: true });
+    const unsubscribe = onSnapshot(
+      ref,
+      async (snapshot) => {
+        syncingFromCloudRef.current = true;
+
+        try {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+
+            if (typeof data.bible === 'string') setBible(data.bible);
+            if (Array.isArray(data.scripts)) setScripts(data.scripts);
+            if (Array.isArray(data.draftScripts))
+              setDraftScripts(data.draftScripts);
+            if (Array.isArray(data.generatedTopics))
+              setGeneratedTopics(data.generatedTopics);
+
+            setSyncStatus('Đã tải dữ liệu từ Firestore');
+          } else {
+            await setDoc(
+              ref,
+              {
+                ...latestDataRef.current,
+                ownerEmail: currentUser.email || '',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+
+            setSyncStatus('Đã tạo dữ liệu Firestore từ dữ liệu local hiện tại');
+          }
+
+          setLastSyncedAt(new Date());
+          setCloudReady(true);
+        } finally {
+          setTimeout(() => {
+            syncingFromCloudRef.current = false;
+          }, 0);
         }
-        setLastSyncedAt(new Date());
-        setCloudReady(true);
-      } finally {
-        setTimeout(() => { syncingFromCloudRef.current = false; }, 0);
+      },
+      (error) => {
+        console.error('Firestore listen error:', error);
+        setSyncStatus(`Lỗi Firestore: ${error.message}`);
+        setCloudReady(false);
       }
-    });
+    );
+
     return () => unsubscribe();
   }, [currentUser, isLocalLoaded]);
 
+  // Tự động sync mọi thay đổi lên Firestore, có debounce để không ghi liên tục từng ký tự.
   useEffect(() => {
     if (!currentUser || !cloudReady || syncingFromCloudRef.current) return;
+
     setSyncStatus('Đang chờ đồng bộ...');
     const timeout = setTimeout(async () => {
       try {
-        await setDoc(getAppDataRef(), { bible, scripts, draftScripts, generatedTopics, updatedAt: serverTimestamp() }, { merge: true });
-        setSyncStatus('Đã lưu Firebase');
+        await setDoc(
+          getAppDataRef(),
+          {
+            bible,
+            scripts,
+            draftScripts,
+            generatedTopics,
+            ownerEmail: currentUser.email || '',
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        setSyncStatus('Đã đồng bộ Firestore');
         setLastSyncedAt(new Date());
-      } catch (e) { setSyncStatus(`Lỗi lưu: ${e.message}`); }
-    }, 1000);
+      } catch (error) {
+        console.error('Firestore save error:', error);
+        setSyncStatus(`Lỗi lưu Firestore: ${error.message}`);
+      }
+    }, 900);
+
     return () => clearTimeout(timeout);
   }, [currentUser, cloudReady, bible, scripts, draftScripts, generatedTopics]);
 
-  const handleSignInWithGoogle = async () => {
-    setAuthError('');
-    try {
-      const res = await signInWithPopup(auth, googleProvider);
-      if (!isAllowedCompanyEmail(res.user?.email)) {
-        await signOut(auth);
-        setCurrentUser(null);
-        setAuthError('Chỉ email công ty mới được phép truy cập.');
-      }
-    } catch (e) { setAuthError('Đăng nhập thất bại.'); }
+  const saveScriptsToStorage = (newScripts) => {
+    setScripts(newScripts);
   };
 
-  const handleSignOut = async () => {
-    await signOut(auth);
-    setCurrentUser(null);
+  const handleBibleChange = (e) => {
+    setBible(e.target.value);
+  };
+
+  const handleSaveManualScript = () => {
+    if (!manualScript.title.trim()) {
+      return showAlert('Lỗi', 'Vui lòng nhập tiêu đề kịch bản!');
+    }
+
+    const newScript = {
+      ...manualScript,
+      id: `s_man_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      status: 'approved',
+      duplicateRiskScore: 0, // Kịch bản thủ công mặc định rủi ro = 0
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveScriptsToStorage([newScript, ...scripts]);
+    setIsAddingManual(false);
+    setManualScript(EMPTY_MANUAL_SCRIPT);
+    showAlert('Thành công', 'Đã thêm kịch bản thủ công vào thư viện!');
+  };
+
+  const updateManualScene = (index, field, value) => {
+    const newScenes = [...manualScript.scenes];
+    newScenes[index][field] = value;
+    setManualScript({ ...manualScript, scenes: newScenes });
+  };
+
+  const addManualScene = () => {
+    setManualScript({
+      ...manualScript,
+      scenes: [
+        ...manualScript.scenes,
+        {
+          name: `Cảnh ${manualScript.scenes.length + 1}`,
+          content: '',
+          visualSuggestion: '',
+        },
+      ],
+    });
+  };
+
+  const removeManualScene = (index) => {
+    const newScenes = manualScript.scenes.filter((_, i) => i !== index);
+    setManualScript({ ...manualScript, scenes: newScenes });
   };
 
   // --- ACTIONS ---
-  const handleScanLibrary = () => {
-    setIsScanning(true);
-    setTimeout(() => {
-      const counts = scripts.reduce((acc, script) => { acc[script.category] = (acc[script.category] || 0) + 1; return acc; }, {});
-      setScanResult({ total: scripts.length, categories: counts, warning: scripts.length ? "Scan thành công, AI sẽ tránh các chủ đề cũ." : 'Thư viện trống.', suggestedFocus: "Nên làm đa dạng chủ đề." });
-      setIsScanning(false);
-    }, 500);
-  };
-
   const handleGenerateTopics = async () => {
-    if (!apiKeys[aiProvider]) return showAlert('Lỗi', `Vui lòng nhập API Key cho ${AI_PROVIDERS[aiProvider].name} ở Cài đặt.`);
+    const { apiKey, provider } = getStoredAIConfig();
+    if (!apiKey) {
+      setActiveTab('settings');
+      return showAlert(
+        'Thiếu AI API Key',
+        `Vào Cài đặt & Dữ liệu, chọn ${getAiProviderConfig(provider).label}, nhập API Key và model rồi bấm “Lưu cấu hình AI” trước khi tạo.`
+      );
+    }
+
     setIsGeneratingTopics(true);
     try {
-      const topics = await generateTopicsFromAI(aiProvider, aiModel, apiKeys, bible, scripts, topicCount);
-      setGeneratedTopics(topics);
-      showAlert('Thành công', `Đã tạo ${topics.length} chủ đề mới!`);
-    } catch (e) { showAlert('Lỗi AI', e.message); } 
-    finally { setIsGeneratingTopics(false); }
-  };
-
-  const handleGenerateCustomTopicScript = async () => {
-    if (!customTopicText.trim()) return showAlert('Lỗi', 'Nhập tình huống thực tế!');
-    if (!apiKeys[aiProvider]) return showAlert('Lỗi', `Vui lòng nhập API Key!`);
-    setIsGeneratingCustomScript(true);
-    try {
-      const fakeTopic = { id: 'cust_'+Date.now(), category: customTopicCategory, topicName: customTopicText, angle: 'Tình huống phát sinh' };
-      const newScript = await generateSingleScriptFromAI(aiProvider, aiModel, apiKeys, fakeTopic, bible, scripts);
-      setDraftScripts(prev => [newScript, ...prev]);
-      setCustomTopicText('');
-      setActiveTab('generate-scripts');
-    } catch (e) { showAlert('Lỗi AI', e.message); } 
-    finally { setIsGeneratingCustomScript(false); }
-  };
-
-  // TỐI ƯU: Gọi song song để tốc độ siêu nhanh
-  const handleGenerateDetailedScripts = async () => {
-    const selected = generatedTopics.filter(t => t.selected);
-    if (selected.length === 0) return showAlert('Thông báo', 'Chọn ít nhất 1 chủ đề!');
-    if (!apiKeys[aiProvider]) return showAlert('Lỗi', `Vui lòng nhập API Key!`);
-
-    setActiveTab('generate-scripts');
-    setIsGeneratingScripts(true);
-    setGenerationStatus(`Đang tạo song song ${selected.length} kịch bản bằng ${aiModel}...`);
-
-    try {
-      // Promise.all: Chạy tất cả kịch bản cùng 1 lúc (Tốc độ sẽ cực kì nhanh, nhưng cần chú ý Limit của Key API)
-      const promises = selected.map(topic => generateSingleScriptFromAI(aiProvider, aiModel, apiKeys, topic, bible, scripts).catch(e => {
-        console.error(`Lỗi kịch bản ${topic.topicName}:`, e);
-        return null; // Bỏ qua kịch bản lỗi, chạy tiếp các kịch bản khác
-      }));
-
-      const results = await Promise.all(promises);
-      const successfulScripts = results.filter(res => res !== null);
-
-      if (successfulScripts.length > 0) {
-        setDraftScripts(prev => [...successfulScripts, ...prev]);
-        showAlert('Thành công', `Đã hoàn thành ${successfulScripts.length}/${selected.length} kịch bản!`);
+      const topics = await generateTopicsFromAI(bible, scripts, topicCount);
+      if (topics && topics.length > 0) {
+        setGeneratedTopics(topics);
       } else {
-        showAlert('Lỗi', 'Tất cả quá trình tạo kịch bản đều thất bại. Hãy kiểm tra lại API Key hoặc đổi Model.');
+        showAlert(
+          'Lỗi AI',
+          'AI kết nối được nhưng trả về 0 chủ đề. Hãy thử lại, đổi model hoặc rút gọn Content Bible.'
+        );
       }
     } catch (error) {
-      showAlert('Lỗi', error.message);
+      console.error('Topic generation error:', error);
+      showAlert('Lỗi AI', error.message || 'Không tạo được chủ đề.');
     } finally {
-      setIsGeneratingScripts(false);
+      setIsGeneratingTopics(false);
+    }
+  };
+
+
+  const handleGenerateCustomTopicScript = async () => {
+    const topicText = customTopicText.trim();
+
+    if (!topicText) {
+      return showAlert(
+        'Thiếu chủ đề phát sinh',
+        'Vui lòng nhập chủ đề thực tế cần tạo kịch bản.'
+      );
+    }
+
+    const { apiKey, provider } = getStoredAIConfig();
+    if (!apiKey) {
+      setActiveTab('settings');
+      return showAlert(
+        'Thiếu AI API Key',
+        `Vào Cài đặt & Dữ liệu, chọn ${getAiProviderConfig(provider).label}, nhập API Key và model rồi bấm “Lưu cấu hình AI” trước khi tạo.`
+      );
+    }
+
+    const customTopic = {
+      id: `custom_top_${Date.now()}`,
+      category: customTopicCategory,
+      topicName: topicText,
+      angle: `Chủ đề phát sinh thực tế: ${topicText}`,
+      hookType: 'Chủ đề phát sinh thực tế',
+      suggestedHook: '',
+      mainMessage:
+        'AI tự xác định thông điệp chính dựa trên chủ đề phát sinh và Content Bible.',
+      whyItCanWork:
+        'Chủ đề đến từ tình huống thực tế nên có tính thời sự và chất liệu thật.',
+      avoidRepeating:
+        'Tránh lặp lại hook, góc nhìn và thông điệp đã có trong thư viện kịch bản cũ.',
+      duplicateRiskScore: 0,
+      selected: true,
+    };
+
+    setIsGeneratingCustomScript(true);
+    setGenerationStatus('Đang tạo kịch bản từ chủ đề phát sinh...');
+
+    try {
+      const newScripts = await generateScriptsBatchFromAI(
+        [customTopic],
+        bible,
+        scripts
+      );
+
+      if (newScripts && newScripts.length > 0) {
+        setDraftScripts((prev) => [...prev, ...newScripts]);
+        setCustomTopicText('');
+        setActiveTab('generate-scripts');
+        showAlert(
+          'Thành công',
+          'Đã tạo 1 kịch bản từ chủ đề phát sinh và đưa vào Kịch bản Draft.'
+        );
+      } else {
+        showAlert(
+          'Lỗi AI',
+          'AI kết nối được nhưng chưa trả về kịch bản cho chủ đề phát sinh.'
+        );
+      }
+    } catch (error) {
+      console.error('Custom topic script generation error:', error);
+      showAlert(
+        'Lỗi AI',
+        error.message || 'Không tạo được kịch bản từ chủ đề phát sinh.'
+      );
+    } finally {
+      setIsGeneratingCustomScript(false);
       setGenerationStatus('');
     }
   };
 
-  const handleSaveDraftToLibrary = (draftId) => {
-    const draft = draftScripts.find(d => d.id === draftId);
-    if (draft) {
-      setScripts(prev => [{ ...draft, status: 'approved' }, ...prev]);
-      setDraftScripts(prev => prev.filter(d => d.id !== draftId));
+  const toggleTopicSelection = (id) => {
+    setGeneratedTopics((topics) =>
+      topics.map((t) => (t.id === id ? { ...t, selected: !t.selected } : t))
+    );
+  };
+
+  const handleGenerateDetailedScripts = async () => {
+    const selected = generatedTopics.filter((t) => t.selected);
+    if (selected.length === 0)
+      return showAlert('Thông báo', 'Vui lòng chọn ít nhất 1 chủ đề!');
+
+    const { apiKey, provider } = getStoredAIConfig();
+    if (!apiKey) {
+      setActiveTab('settings');
+      return showAlert(
+        'Thiếu AI API Key',
+        `Vào Cài đặt & Dữ liệu, chọn ${getAiProviderConfig(provider).label}, nhập API Key và model rồi bấm “Lưu cấu hình AI” trước khi tạo.`
+      );
+    }
+
+    setActiveTab('generate-scripts');
+    setIsGeneratingScripts(true);
+    setGenerationStatus('Bắt đầu khởi tạo dữ liệu...');
+
+    let generatedCount = 0;
+    const errors = [];
+
+    try {
+      for (let i = 0; i < selected.length; i += SCRIPT_BATCH_SIZE) {
+        const chunk = selected.slice(i, i + SCRIPT_BATCH_SIZE);
+        const chunkNumber = Math.floor(i / SCRIPT_BATCH_SIZE) + 1;
+        const totalChunks = Math.ceil(selected.length / SCRIPT_BATCH_SIZE);
+
+        setGenerationStatus(
+          `Đang xử lý cụm ${chunkNumber}/${totalChunks} (gồm ${chunk.length} kịch bản)...`
+        );
+
+        try {
+          const newScripts = await generateScriptsBatchFromAI(
+            chunk,
+            bible,
+            scripts
+          );
+
+          if (newScripts && newScripts.length > 0) {
+            generatedCount += newScripts.length;
+            setDraftScripts((prev) => [...prev, ...newScripts]);
+          } else {
+            errors.push(`Cụm ${chunkNumber}: AI không trả về kịch bản.`);
+          }
+        } catch (error) {
+          console.error(`Lỗi tạo cụm kịch bản số ${chunkNumber}:`, error);
+          errors.push(`Cụm ${chunkNumber}: ${error.message || 'Lỗi không xác định'}`);
+        }
+      }
+    } finally {
+      setIsGeneratingScripts(false);
+      setGenerationStatus('');
+    }
+
+    if (generatedCount === 0) {
+      showAlert(
+        'Lỗi',
+        errors[0] || 'Có lỗi kết nối khi tạo kịch bản, vui lòng thử lại!'
+      );
+    } else if (generatedCount < selected.length) {
+      showAlert(
+        'Thông báo',
+        `Đã tạo thành công ${generatedCount}/${selected.length} kịch bản. Một số cụm bị lỗi: ${errors.slice(0, 2).join(' | ')}`
+      );
+    } else {
+      showAlert('Thành công', `Đã tạo thành công ${generatedCount} kịch bản!`);
     }
   };
 
-  const handleDeleteDraft = (id) => showConfirm('Xác nhận xóa', 'Bạn muốn xóa bản nháp này?', () => setDraftScripts(p => p.filter(d => d.id !== id)));
-  const handleDeleteScript = (id) => showConfirm('Xác nhận xóa', 'Bạn muốn xóa khỏi thư viện?', () => setScripts(p => p.filter(s => s.id !== id)));
+  const handleSaveDraftToLibrary = (draftId) => {
+    const draftToSave = draftScripts.find((d) => d.id === draftId);
+    if (draftToSave) {
+      const newScript = { ...draftToSave, status: 'approved' };
+      saveScriptsToStorage([...scripts, newScript]);
+
+      setDraftScripts((drafts) => {
+        const newDrafts = drafts.filter((d) => d.id !== draftId);
+        return newDrafts;
+      });
+      showAlert('Thành công', 'Đã lưu vào thư viện!');
+    }
+  };
+
+  const handleDeleteScript = (id) => {
+    showConfirm('Xác nhận xóa', 'Bạn có chắc muốn xóa kịch bản này?', () => {
+      saveScriptsToStorage(scripts.filter((s) => s.id !== id));
+    });
+  };
+
+  const handleDeleteDraft = (id) => {
+    showConfirm(
+      'Xác nhận xóa',
+      'Bạn có chắc muốn xóa kịch bản nháp này?',
+      () => {
+        setDraftScripts((drafts) => {
+          const newDrafts = drafts.filter((d) => d.id !== id);
+          localStorage.setItem('haichai_drafts', JSON.stringify(newDrafts));
+          return newDrafts;
+        });
+      }
+    );
+  };
 
   const handleExportPDF = (script) => {
     const printWindow = window.open('', '_blank');
-    if (!printWindow) return showAlert('Lỗi Pop-up', 'Vui lòng cho phép Pop-up để in.');
-    const html = `<html><head><title>${script.title}</title><style>body{font-family:sans-serif;line-height:1.6;padding:40px;max-width:800px;margin:0 auto}h1{border-bottom:2px solid #000;padding-bottom:10px}.scene{margin-bottom:20px;padding-left:15px;border-left:3px solid #ccc}.meta{background:#f0f0f0;padding:15px;border-radius:5px}</style></head><body><h1>${script.title}</h1><div class="meta"><b>Message:</b> ${script.mainMessage}<br><b>Hook:</b> "${script.selectedHook}"</div><h2>Kịch Bản</h2>${script.scenes.map(s => `<div class="scene"><b>${s.name}</b><p>${s.content}</p><i>🎥 ${s.visualSuggestion}</i></div>`).join('')}<h3>Câu kết</h3><p>"${script.ending}"</p><hr><p><b>Text:</b> ${script.textOnScreen}</p><p><b>Caption:</b> ${script.caption}</p><script>setTimeout(()=>window.print(),500)</script></body></html>`;
-    printWindow.document.write(html);
+    if (!printWindow) {
+      showAlert(
+        'Lỗi Pop-up',
+        'Vui lòng cho phép trình duyệt mở tab mới (Pop-up) để in kịch bản.'
+      );
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <title>${script.title} - Haichai Script</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+          body { font-family: 'Inter', sans-serif; line-height: 1.6; color: #1f2937; max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+          h1 { font-size: 24px; border-bottom: 2px solid #1f2937; padding-bottom: 10px; margin-bottom: 24px; text-transform: uppercase; }
+          .meta-box { background: #f3f4f6; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #e5e7eb; }
+          .meta-item { margin-bottom: 10px; }
+          .meta-item:last-child { margin-bottom: 0; }
+          .meta-label { font-weight: 700; color: #4b5563; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em; display: block; margin-bottom: 2px; }
+          .meta-value { font-size: 15px; color: #111827; }
+          .hook-box { background: #eef2ff; padding: 15px; border-radius: 8px; border-left: 4px solid #4f46e5; margin-bottom: 30px; }
+          h2 { font-size: 18px; margin-top: 30px; color: #1f2937; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;}
+          .scene { margin-bottom: 20px; page-break-inside: avoid; }
+          .scene-title { font-weight: 700; font-size: 15px; color: #111827; margin-bottom: 6px; }
+          .scene-content { margin: 0 0 8px 0; font-size: 15px; }
+          .scene-visual { color: #4f46e5; font-style: italic; font-size: 14px; margin: 0; background: #f8fafc; padding: 6px 10px; border-radius: 4px; display: inline-block; }
+          .footer-note { margin-top: 50px; font-size: 12px; color: #9ca3af; text-align: center; border-top: 1px solid #f3f4f6; padding-top: 20px; }
+          .danger-note { color: #b91c1c; background: #fef2f2; padding: 12px; border-radius: 6px; border: 1px solid #fecaca; }
+          @media print {
+            body { padding: 0; margin: 0; max-width: 100%; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>${script.title}</h1>
+        
+        <div class="meta-box">
+          <div class="meta-item">
+            <span class="meta-label">Nhóm nội dung</span>
+            <span class="meta-value">${script.category}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Thông điệp chính</span>
+            <span class="meta-value">${script.mainMessage}</span>
+          </div>
+        </div>
+
+        <div class="hook-box">
+          <span class="meta-label" style="color: #4f46e5;">Hook</span>
+          <span class="meta-value" style="font-weight: 500; font-size: 16px;">"${
+            script.selectedHook
+          }"</span>
+        </div>
+
+        <h2>KỊCH BẢN CHI TIẾT (SHOOTING SCRIPT)</h2>
+        ${
+          script.scenes
+            ? script.scenes
+                .map(
+                  (s) => `
+          <div class="scene">
+            <div class="scene-title">${s.name}</div>
+            <p class="scene-content">${s.content}</p>
+            <p class="scene-visual">🎥 Góc máy/Hành động: ${s.visualSuggestion}</p>
+          </div>
+        `
+                )
+                .join('\n')
+            : '<p>Chưa có phân cảnh.</p>'
+        }
+
+        <div class="scene" style="margin-top: 24px; border-top: 1px dashed #ccc; padding-top: 16px;">
+          <div class="scene-title">CÂU KẾT</div>
+          <p class="scene-content" style="font-weight: 500;">"${
+            script.ending
+          }"</p>
+        </div>
+
+        <h2>HẬU KỲ & ĐĂNG TẢI</h2>
+        <div class="meta-item" style="margin-bottom: 16px;">
+          <span class="meta-label">Text On Screen (Chữ trên màn hình)</span>
+          <span class="meta-value">${script.textOnScreen}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Caption</span>
+          <span class="meta-value" style="white-space: pre-wrap;">${
+            script.caption
+          }</span>
+        </div>
+
+        ${
+          script.notes
+            ? `
+        <h2 style="color: #b91c1c; border-bottom-color: #fecaca;">LƯU Ý AN TOÀN</h2>
+        <div class="danger-note">${script.notes}</div>
+        `
+            : ''
+        }
+
+        <div class="footer-note">Tạo bởi Haichai Script Studio - Xuất ngày ${new Date().toLocaleDateString(
+          'vi-VN'
+        )}</div>
+        <script>
+          window.onload = () => {
+            setTimeout(() => {
+              window.print();
+            }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
   };
 
-  // --- RENDERERS ---
+  // --- SUB-COMPONENTS ---
   const renderModal = () => {
     if (!modal.isOpen) return null;
     return (
-      <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[100] p-4">
-        <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-          <h3 className="text-xl font-bold mb-3">{modal.title}</h3>
-          <p className="mb-6">{modal.message}</p>
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-fade-in border border-slate-100">
+          <h3 className="text-xl font-bold text-slate-800 mb-3">
+            {modal.title}
+          </h3>
+          <p className="text-slate-600 mb-6 text-sm leading-relaxed">
+            {modal.message}
+          </p>
           <div className="flex justify-end gap-3">
-            {modal.type === 'confirm' && <button onClick={closeModal} className="px-4 py-2 bg-slate-200 rounded">Hủy</button>}
-            <button onClick={() => { if(modal.onConfirm) modal.onConfirm(); closeModal(); }} className="px-4 py-2 bg-blue-600 text-white rounded">OK</button>
+            {modal.type === 'confirm' && (
+              <button
+                onClick={closeModal}
+                className="px-5 py-2 text-[#0d71ba] hover:bg-slate-100 rounded-lg font-medium transition"
+              >
+                Hủy
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (modal.onConfirm) modal.onConfirm();
+                closeModal();
+              }}
+              className="px-5 py-2 bg-[#0d71ba] hover:opacity-90 text-white rounded-lg font-medium transition shadow-sm"
+            >
+              {modal.type === 'confirm' ? 'Xác nhận' : 'Đóng'}
+            </button>
           </div>
         </div>
       </div>
@@ -507,180 +1737,1245 @@ export default function App() {
 
   const renderSidebar = () => (
     <div className="w-64 text-white flex flex-col h-screen fixed top-0 left-0 bg-[#0d2440]">
-      <div className="p-6 font-bold text-xl tracking-wider">HAICHAI STUDIO</div>
+      <div className="p-6 flex items-center">
+        {/* Placeholder if image fails to load */}
+        <img
+          src="https://tascusfood.com/haichailogo.png"
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src =
+              'https://placehold.co/150x50/0d2440/FFF?text=HAICHAI+STUDIO';
+          }}
+          alt="Haichai Script Studio"
+          className="h-18 w-auto object-contain"
+        />
+      </div>
       <nav className="flex-1 px-4 space-y-2 mt-4">
         {[
           { id: 'library', icon: <IconBook />, label: 'Thư viện kịch bản' },
-          { id: 'generate-topics', icon: <IconSparkles />, label: 'Tạo chủ đề' },
-          { id: 'generate-scripts', icon: <IconFileText />, label: 'Kịch bản Draft' },
+          {
+            id: 'generate-topics',
+            icon: <IconSparkles />,
+            label: 'Tạo chủ đề',
+          },
+          {
+            id: 'generate-scripts',
+            icon: <IconFileText />,
+            label: 'Kịch bản Draft',
+          },
           { id: 'bible', icon: <IconFileText />, label: 'Content Bible' },
-          { id: 'settings', icon: <IconSettings />, label: 'Cài đặt & Dữ liệu' }
+          {
+            id: 'settings',
+            icon: <IconSettings />,
+            label: 'Cài đặt & Dữ liệu',
+          },
         ].map((item) => (
-          <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg ${activeTab === item.id ? 'bg-[#819396]' : 'hover:bg-[#bf0e0e]'}`}>
-            {item.icon} {item.label}
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id)}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              activeTab === item.id
+                ? 'bg-[#819396] text-white shadow-md'
+                : 'text-slate-400 hover:bg-[#bf0e0e] hover:text-white'
+            }`}
+          >
+            {item.icon}
+            {item.label}
           </button>
         ))}
       </nav>
-      <div className="p-4 text-xs text-slate-400 border-t border-slate-700">{syncStatus}</div>
-    </div>
-  );
-
-  const renderSettings = () => (
-    <div className="max-w-3xl">
-      <h2 className="text-2xl font-bold mb-6">Cài đặt Hệ thống</h2>
-      
-      {/* AI Configuration Section */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
-        <h3 className="text-lg font-bold mb-4">Cấu hình AI (Tạo Kịch Bản)</h3>
-        
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">Nhà cung cấp AI</label>
-            <select value={aiProvider} onChange={handleProviderChange} className="w-full p-2 border rounded">
-              {Object.entries(AI_PROVIDERS).map(([key, info]) => <option key={key} value={key}>{info.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">Model (Mô hình)</label>
-            <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="w-full p-2 border rounded">
-              {AI_PROVIDERS[aiProvider].models.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
+      <div className="p-4 text-xs text-slate-300 border-t border-slate-700">
+        <div className="font-medium text-white/80">MVP v1.1 - Firebase</div>
+        <div className="mt-1 truncate">
+          {currentUser?.email || 'Chưa đăng nhập'}
         </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">Google Gemini API Key</label>
-            <input type="password" value={apiKeys.gemini} onChange={e => handleKeyChange('gemini', e.target.value)} className="w-full p-2 border rounded font-mono text-sm" placeholder="AIza..." />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">OpenAI API Key</label>
-            <input type="password" value={apiKeys.openai} onChange={e => handleKeyChange('openai', e.target.value)} className="w-full p-2 border rounded font-mono text-sm" placeholder="sk-..." />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">Groq API Key</label>
-            <input type="password" value={apiKeys.groq} onChange={e => handleKeyChange('groq', e.target.value)} className="w-full p-2 border rounded font-mono text-sm" placeholder="gsk_..." />
-          </div>
-        </div>
-        <p className="text-xs text-slate-500 mt-4">API keys được mã hóa và chỉ lưu trực tiếp trên trình duyệt của máy bạn, KHÔNG lưu lên Server.</p>
-      </div>
-
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h3 className="text-lg font-bold mb-4">Tài khoản & Dữ liệu</h3>
-        <p className="mb-4 text-sm text-slate-600">Đăng nhập: {currentUser?.email}</p>
-        <button onClick={handleSignOut} className="bg-red-600 text-white px-4 py-2 rounded font-medium text-sm">Đăng xuất khỏi Firebase</button>
+        <div className="mt-1 text-slate-400">{syncStatus}</div>
       </div>
     </div>
   );
 
-  const renderBible = () => (
-    <div className="flex flex-col h-[calc(100vh-6rem)]">
-      <h2 className="text-2xl font-bold mb-4">Content Bible</h2>
-      <textarea className="flex-1 p-6 border rounded-xl font-mono text-sm" value={bible} onChange={(e) => setBible(e.target.value)} spellCheck="false" />
-    </div>
-  );
+  const renderLibrary = () => {
+    const filteredScripts = scripts.filter((s) => {
+      const matchSearch =
+        s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.topic.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchCat = filterCat === 'All' || s.category === filterCat;
+      return matchSearch && matchCat;
+    });
 
-  // --- RENDER DRAFTS / TOPICS / LIBRARY (Tránh quá dài, các logic mapping tương tự) ---
-  const renderScriptGenerator = () => (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">Kịch bản Draft chưa lưu</h2>
-      {isGeneratingScripts && <div className="text-blue-600 mb-4 font-bold">{generationStatus}</div>}
-      <div className="space-y-6">
-        {draftScripts.map((script, idx) => (
-          <div key={script.id} className="bg-white border rounded p-4 shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-lg">#{idx+1} - {script.title}</h3>
-              <div className="flex gap-2">
-                 <button onClick={() => handleSaveDraftToLibrary(script.id)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Lưu Thư viện</button>
-                 <button onClick={() => handleDeleteDraft(script.id)} className="bg-red-600 text-white px-3 py-1 rounded text-sm">Xóa</button>
+    return (
+      <div className="animate-fade-in">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-slate-800">
+            Thư viện Kịch bản ({scripts.length})
+          </h2>
+          <button
+            className="bg-[#0d71ba] hover:opacity-90 text-white px-4 py-2 rounded shadow-sm text-sm font-medium transition flex items-center gap-2"
+            onClick={() => {
+              setManualScript(EMPTY_MANUAL_SCRIPT);
+              setIsAddingManual(true);
+            }}
+          >
+            <IconPlus /> Thêm thủ công
+          </button>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex gap-4">
+          <div className="flex-1 relative">
+            <div className="absolute inset-y-0 left-3 flex items-center text-slate-400">
+              <IconSearch />
+            </div>
+            <input
+              type="text"
+              placeholder="Tìm tên kịch bản, chủ đề..."
+              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <select
+            className="border border-slate-300 rounded-lg px-4 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={filterCat}
+            onChange={(e) => setFilterCat(e.target.value)}
+          >
+            <option value="All">Tất cả nhóm nội dung</option>
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
+              <tr>
+                <th className="px-6 py-4">Tiêu đề</th>
+                <th className="px-6 py-4">Nhóm nội dung</th>
+                <th className="px-6 py-4">Trạng thái</th>
+                <th className="px-6 py-4">Trùng lặp</th>
+                <th className="px-6 py-4 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredScripts.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="text-center py-8 text-slate-500">
+                    Chưa có kịch bản nào.
+                  </td>
+                </tr>
+              ) : (
+                filteredScripts.map((script) => (
+                  <tr
+                    key={script.id}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="px-6 py-4 font-medium text-slate-800">
+                      {script.title}
+                    </td>
+                    <td className="px-6 py-4 text-slate-600">
+                      <span className="inline-block bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs">
+                        {script.category}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          script.status === 'approved'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {script.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          script.duplicateRiskScore > 70
+                            ? 'bg-red-100 text-red-700'
+                            : script.duplicateRiskScore > 40
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-green-100 text-green-700'
+                        }`}
+                      >
+                        Score: {script.duplicateRiskScore}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => setViewingScript(script)}
+                        className="text-[#0d71ba] hover:opacity-70 font-medium text-sm mr-3 transition"
+                      >
+                        Xem
+                      </button>
+                      <button
+                        onClick={() => handleExportPDF(script)}
+                        className="text-[#0d71ba] hover:opacity-70 font-medium text-sm mr-3 transition"
+                        title="In/Xuất PDF"
+                      >
+                        In/PDF
+                      </button>
+                      <button
+                        onClick={() => handleDeleteScript(script.id)}
+                        className="text-[#0d71ba] hover:opacity-70 font-medium text-sm transition"
+                      >
+                        Xóa
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Modal Xem Kịch Bản */}
+        {viewingScript && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 z-[60]">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+              <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                <h3 className="text-lg font-bold text-slate-800">
+                  {viewingScript.title}
+                </h3>
+                <div className="flex gap-4 items-center">
+                  <button
+                    onClick={() => handleExportPDF(viewingScript)}
+                    className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-800 px-4 py-2 rounded-lg text-sm font-medium transition"
+                  >
+                    <IconPrinter /> In kịch bản
+                  </button>
+                  <button
+                    onClick={() => setViewingScript(null)}
+                    className="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none"
+                  >
+                    &times;
+                  </button>
+                </div>
+              </div>
+              <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 gap-8 text-sm">
+                <div className="lg:col-span-2 space-y-6">
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                      Thông điệp chính
+                    </h4>
+                    <p className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-lg italic">
+                      {viewingScript.mainMessage}
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                      Hook Được Chọn
+                    </h4>
+                    <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
+                      <p className="text-lg font-medium text-indigo-900">
+                        "{viewingScript.selectedHook}"
+                      </p>
+                      <p className="text-indigo-600 mt-2 text-xs">
+                        Lý do: {viewingScript.selectedHookReason}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                      Các Cảnh Quay
+                    </h4>
+                    <div className="space-y-4">
+                      {viewingScript.scenes?.map((scene, i) => (
+                        <div
+                          key={i}
+                          className="border-l-2 border-indigo-200 pl-4 py-1"
+                        >
+                          <p className="font-bold text-slate-700">
+                            {scene.name}
+                          </p>
+                          <p className="text-slate-800 mt-1 whitespace-pre-line">
+                            {scene.content}
+                          </p>
+                          <p className="text-slate-500 text-xs mt-1">
+                            🎥 {scene.visualSuggestion}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                      Câu Kết
+                    </h4>
+                    <p className="text-slate-800 font-medium">
+                      "{viewingScript.ending}"
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-6 bg-slate-50 p-4 rounded-lg border border-slate-100 h-fit">
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
+                      Text on Screen
+                    </h4>
+                    <p className="text-slate-700 bg-white p-2 rounded border border-slate-200">
+                      {viewingScript.textOnScreen}
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
+                      Caption
+                    </h4>
+                    <p className="text-slate-700 bg-white p-2 rounded border border-slate-200 whitespace-pre-line">
+                      {viewingScript.caption}
+                    </p>
+                  </div>
+                  {viewingScript.notes && (
+                    <div>
+                      <h4 className="font-bold text-red-800 mb-1 uppercase text-xs">
+                        Checklist An Toàn
+                      </h4>
+                      <p className="text-red-700 bg-red-50 p-2 rounded border border-red-200">
+                        {viewingScript.notes}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            <p className="text-sm bg-yellow-50 p-2 mb-2 italic">{script.mainMessage}</p>
-            <div className="text-sm mb-4"><b>Hook:</b> {script.selectedHook}</div>
-            <div className="text-sm border-l-2 border-indigo-200 pl-3">
-              {script.scenes?.map((s,i) => <div key={i} className="mb-2"><b>{s.name}:</b> {s.content}</div>)}
+          </div>
+        )}
+
+        {/* Modal Thêm Kịch Bản Thủ Công */}
+        {isAddingManual && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 z-[60]">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+              <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                <h3 className="text-lg font-bold text-slate-800">
+                  Thêm kịch bản thủ công
+                </h3>
+                <button
+                  onClick={() => setIsAddingManual(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto bg-white flex-1 space-y-6 text-sm">
+                {/* Hàng 1: Tiêu đề & Nhóm */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Tiêu đề kịch bản (*)
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      placeholder="VD: Sai lầm khi chọn mặt bằng"
+                      value={manualScript.title}
+                      onChange={(e) =>
+                        setManualScript({
+                          ...manualScript,
+                          title: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Nhóm nội dung
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      value={manualScript.category}
+                      onChange={(e) =>
+                        setManualScript({
+                          ...manualScript,
+                          category: e.target.value,
+                        })
+                      }
+                    >
+                      {CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Hàng 2: Chủ đề & Main Message */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Từ khóa Chủ đề
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      placeholder="VD: Mặt bằng, Quản lý kho..."
+                      value={manualScript.topic}
+                      onChange={(e) =>
+                        setManualScript({
+                          ...manualScript,
+                          topic: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Thông điệp chính
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      placeholder="Tóm tắt 1 câu thông điệp video"
+                      value={manualScript.mainMessage}
+                      onChange={(e) =>
+                        setManualScript({
+                          ...manualScript,
+                          mainMessage: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <hr className="border-slate-100" />
+
+                {/* Hook */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 text-[#0d71ba]">
+                    Câu Hook (Mở đầu)
+                  </label>
+                  <textarea
+                    className="w-full px-3 py-2 border border-[#0d71ba] bg-blue-50/30 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[60px]"
+                    placeholder="Câu nói đầu tiên thu hút người xem..."
+                    value={manualScript.selectedHook}
+                    onChange={(e) =>
+                      setManualScript({
+                        ...manualScript,
+                        selectedHook: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                {/* Scenes */}
+                <div>
+                  <div className="flex justify-between items-end mb-3">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Các phân cảnh chi tiết
+                    </label>
+                    <button
+                      onClick={addManualScene}
+                      className="text-xs bg-[#0d71ba] text-white hover:opacity-90 px-3 py-1 rounded font-medium flex items-center gap-1 transition"
+                    >
+                      <IconPlus /> Thêm cảnh
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {manualScript.scenes.map((scene, index) => (
+                      <div
+                        key={index}
+                        className="p-4 border border-slate-200 rounded-lg bg-slate-50 relative group"
+                      >
+                        <div className="flex justify-between mb-2">
+                          <input
+                            type="text"
+                            className="font-bold bg-transparent border-none focus:ring-0 p-0 text-slate-700 text-sm w-32 outline-none"
+                            value={scene.name}
+                            onChange={(e) =>
+                              updateManualScene(index, 'name', e.target.value)
+                            }
+                            placeholder="Tên cảnh..."
+                          />
+                          {manualScript.scenes.length > 1 && (
+                            <button
+                              onClick={() => removeManualScene(index)}
+                              className="text-[#0d71ba] hover:opacity-70 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Xóa cảnh"
+                            >
+                              <IconTrash />
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-3">
+                          <textarea
+                            className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[60px] text-sm"
+                            placeholder="Lời thoại (Voice / Nói trực tiếp)..."
+                            value={scene.content}
+                            onChange={(e) =>
+                              updateManualScene(
+                                index,
+                                'content',
+                                e.target.value
+                              )
+                            }
+                          />
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm text-slate-600 italic"
+                            placeholder="Góc máy / Hành động..."
+                            value={scene.visualSuggestion}
+                            onChange={(e) =>
+                              updateManualScene(
+                                index,
+                                'visualSuggestion',
+                                e.target.value
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Câu kết */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                    Câu Kết (Call to Action / Chốt vấn đề)
+                  </label>
+                  <textarea
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[60px]"
+                    placeholder="Câu nói chốt lại vấn đề cuối video..."
+                    value={manualScript.ending}
+                    onChange={(e) =>
+                      setManualScript({
+                        ...manualScript,
+                        ending: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <hr className="border-slate-100" />
+
+                {/* Hậu kỳ */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Text on screen (Chữ nổi trên màn hình)
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                      placeholder="Tiêu đề to dán trên video..."
+                      value={manualScript.textOnScreen}
+                      onChange={(e) =>
+                        setManualScript({
+                          ...manualScript,
+                          textOnScreen: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Caption bài đăng (Kèm Hashtag)
+                    </label>
+                    <textarea
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[80px] bg-white"
+                      placeholder="Mô tả dưới bài đăng..."
+                      value={manualScript.caption}
+                      onChange={(e) =>
+                        setManualScript({
+                          ...manualScript,
+                          caption: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-red-700 uppercase tracking-wider mb-2">
+                      Ghi chú an toàn (Nếu có)
+                    </label>
+                    <textarea
+                      className="w-full px-3 py-2 border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none min-h-[80px] bg-red-50"
+                      placeholder="Các từ ngữ cần tránh, lưu ý đạo cụ..."
+                      value={manualScript.notes}
+                      onChange={(e) =>
+                        setManualScript({
+                          ...manualScript,
+                          notes: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Modal */}
+              <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3 bg-slate-50">
+                <button
+                  onClick={() => setIsAddingManual(false)}
+                  className="px-5 py-2 text-[#0d71ba] hover:bg-slate-200 rounded-lg font-medium transition"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleSaveManualScript}
+                  className="px-5 py-2 bg-[#0d71ba] hover:opacity-90 text-white rounded-lg font-medium transition shadow-sm flex items-center gap-2"
+                >
+                  <IconCheck /> Lưu Kịch Bản
+                </button>
+              </div>
             </div>
           </div>
-        ))}
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderTopicGenerator = () => (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">Tạo Chủ đề </h2>
-      <div className="flex gap-4 mb-6">
-        <button onClick={handleScanLibrary} className="bg-blue-600 text-white px-4 py-2 rounded">Scan Thư Viện</button>
-        <button onClick={handleGenerateTopics} disabled={isGeneratingTopics} className="bg-indigo-600 text-white px-4 py-2 rounded">{isGeneratingTopics ? 'Đang tạo...' : 'Tạo Chủ Đề Tự Động'}</button>
+    <div className="animate-fade-in">
+      <h2 className="text-2xl font-bold text-slate-800 mb-6">
+        Tạo Chủ đề theo Content Bible
+      </h2>
+
+      {/* Generate Section */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-1">
+              Tạo chủ đề mới
+            </h3>
+            <p className="text-sm text-slate-500">
+              Tạo {topicCount} chủ đề theo đúng Content Bible, tự chia tỉ lệ nội dung tương ứng.
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Tỉ lệ hiện tại: {getTopicDistributionSummary(topicCount)}
+            </p>
+          </div>
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Số lượng chủ đề
+              </label>
+              <select
+                value={topicCount}
+                onChange={(e) => setTopicCount(Number(e.target.value))}
+                disabled={isGeneratingTopics}
+                className="border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                {TOPIC_COUNT_OPTIONS.map((count) => (
+                  <option key={count} value={count}>
+                    {count} chủ đề
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleGenerateTopics}
+              disabled={isGeneratingTopics}
+              className="px-5 py-2 rounded-lg font-medium transition shadow-sm flex items-center gap-2 bg-[#0d71ba] hover:opacity-90 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGeneratingTopics ? 'Đang tạo...' : `Tạo ${topicCount} Chủ Đề`}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="bg-white p-4 border rounded mb-6">
-        <h3 className="font-bold mb-2">Tạo từ tình huống thực tế</h3>
-        <textarea value={customTopicText} onChange={e => setCustomTopicText(e.target.value)} className="w-full border p-2 rounded mb-2" placeholder="Ví dụ: Khách chê đắt..."></textarea>
-        <button onClick={handleGenerateCustomTopicScript} disabled={isGeneratingCustomScript} className="bg-slate-800 text-white px-4 py-2 rounded">{isGeneratingCustomScript ? 'Đang tạo...' : 'Tạo Kịch Bản Nhanh'}</button>
+      {/* Custom Real-life Topic Section */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-8">
+        <div className="flex justify-between items-start gap-6 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-1">
+              Tạo 1 kịch bản từ chủ đề phát sinh
+            </h3>
+            <p className="text-sm text-slate-500">
+              Dùng khi vừa có tình huống thực tế, sự kiện ở cửa hàng, câu chuyện đi thị trường hoặc insight mới. AI vẫn bám Content Bible và tránh trùng thư viện cũ.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+          <div className="lg:col-span-1">
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Nhóm nội dung
+            </label>
+            <select
+              value={customTopicCategory}
+              onChange={(e) => setCustomTopicCategory(e.target.value)}
+              disabled={isGeneratingCustomScript}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              {CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="lg:col-span-2">
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Chủ đề phát sinh thực tế
+            </label>
+            <textarea
+              value={customTopicText}
+              onChange={(e) => setCustomTopicText(e.target.value)}
+              disabled={isGeneratingCustomScript}
+              rows={3}
+              placeholder="Ví dụ: Hôm nay đi khảo sát mặt bằng VinWestPoint, phát hiện khách hỏi nhiều về giấy tờ nguồn gốc hơn là giá..."
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 resize-none"
+            />
+          </div>
+
+          <button
+            onClick={handleGenerateCustomTopicScript}
+            disabled={isGeneratingCustomScript || !customTopicText.trim()}
+            className={`px-5 py-2 rounded-lg font-medium transition shadow-sm ${
+              isGeneratingCustomScript || !customTopicText.trim()
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                : 'bg-[#0d71ba] hover:opacity-90 text-white'
+            }`}
+          >
+            {isGeneratingCustomScript ? 'Đang tạo...' : 'Tạo kịch bản phát sinh'}
+          </button>
+        </div>
       </div>
 
       {generatedTopics.length > 0 && (
-        <div className="bg-white border rounded">
-          <div className="p-3 border-b bg-slate-50 flex justify-between items-center">
-            <span>Chọn {generatedTopics.filter(t => t.selected).length} chủ đề</span>
-            <button onClick={handleGenerateDetailedScripts} className="bg-blue-600 text-white px-4 py-1 rounded text-sm">Viết Kịch Bản cho Topic đã chọn</button>
-          </div>
-          <div className="max-h-96 overflow-y-auto p-4 space-y-2">
-            {generatedTopics.map(t => (
-              <div key={t.id} onClick={() => setGeneratedTopics(pt => pt.map(x => x.id === t.id ? {...x, selected: !x.selected} : x))} className={`p-2 border rounded cursor-pointer ${t.selected ? 'bg-indigo-50 border-indigo-200' : ''}`}>
-                <input type="checkbox" checked={t.selected} readOnly className="mr-3" />
-                <b>{t.topicName}</b> - <i>{t.angle}</i>
-              </div>
-            ))}
-          </div>
+        <div className="mt-8 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <div className="bg-indigo-50 p-3 border-b border-slate-200 flex justify-between items-center text-sm">
+              <span className="font-medium text-indigo-800">
+                Đã chọn: {generatedTopics.filter((t) => t.selected).length} chủ
+                đề
+              </span>
+              <button
+                onClick={handleGenerateDetailedScripts}
+                className="bg-[#0d71ba] text-white px-4 py-1.5 rounded hover:opacity-90 font-medium shadow-sm transition"
+              >
+                Tạo kịch bản cho chủ đề đã chọn →
+              </button>
+            </div>
+            <div className="max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-600 sticky top-0 shadow-sm z-10">
+                  <tr>
+                    <th className="px-4 py-3 w-12 text-center">Chọn</th>
+                    <th className="px-4 py-3">Nhóm nội dung</th>
+                    <th className="px-4 py-3">Chủ đề & Góc nhìn</th>
+                    <th className="px-4 py-3 w-24">Risk Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {generatedTopics.map((topic) => (
+                    <tr
+                      key={topic.id}
+                      className={`hover:bg-indigo-50/70 cursor-pointer transition-colors ${
+                        topic.selected ? 'bg-indigo-50/50' : ''
+                      }`}
+                      onClick={() => toggleTopicSelection(topic.id)}
+                    >
+                      <td className="px-4 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={topic.selected}
+                          onChange={() => {}} // Handled by tr click
+                          className="w-4 h-4 text-[#0d71ba] rounded border-slate-300 focus:ring-indigo-500"
+                        />
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="inline-block bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium">
+                          {topic.category}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="font-medium text-slate-900">
+                          {topic.topicName}
+                        </p>
+                        <p className="text-slate-500 mt-1 line-clamp-2">
+                          {topic.angle}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            topic.duplicateRiskScore > 70
+                              ? 'bg-red-100 text-red-700'
+                              : topic.duplicateRiskScore > 40
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-green-100 text-green-700'
+                          }`}
+                        >
+                          {topic.duplicateRiskScore}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
         </div>
       )}
     </div>
   );
 
-  const renderLibrary = () => (
-    <div>
-       <h2 className="text-2xl font-bold mb-6">Thư Viện Chính ({scripts.length})</h2>
-       <div className="space-y-4">
-        {scripts.map(s => (
-          <div key={s.id} className="bg-white border p-4 rounded flex justify-between items-center">
-            <div>
-              <div className="font-bold">{s.title}</div>
-              <div className="text-sm text-slate-500">{s.category} | Risk: {s.duplicateRiskScore}</div>
+  const renderScriptGenerator = () => (
+    <div className="animate-fade-in">
+      <h2 className="text-2xl font-bold text-slate-800 mb-6">
+        Kịch bản Draft chưa lưu
+      </h2>
+
+      {draftScripts.length === 0 && !isGeneratingScripts ? (
+        <div className="bg-white p-12 text-center rounded-xl shadow-sm border border-slate-200 text-slate-500">
+          Không có kịch bản Draft nào. Hãy sang tab "Tạo chủ đề" để chọn và tạo.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {[...draftScripts]
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .map((script, idx) => (
+              <div
+                key={script.id}
+                className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"
+              >
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">
+                      #{idx + 1} - {script.title}
+                    </h3>
+                    <div className="flex gap-2 mt-2 text-xs">
+                      <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-medium">
+                        {script.category}
+                      </span>
+                      <span className="bg-slate-200 text-slate-700 px-2 py-1 rounded">
+                        Risk: {script.duplicateRiskScore}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => handleSaveDraftToLibrary(script.id)}
+                      className="bg-[#0d71ba] hover:opacity-90 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition shadow-sm"
+                    >
+                      <IconCheck /> Lưu vào Thư viện
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDraft(script.id)}
+                      className="bg-[#0d71ba] hover:opacity-90 text-white px-3 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition shadow-sm"
+                      title="Xóa nháp này"
+                    >
+                      <IconTrash /> Xóa
+                    </button>
+                  </div>
+                </div>
+                <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-2 space-y-6 text-sm">
+                    <div>
+                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                        Thông điệp chính
+                      </h4>
+                      <p className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-lg italic">
+                        {script.mainMessage}
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                        Hook Được Chọn
+                      </h4>
+                      <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
+                        <p className="text-lg font-medium text-indigo-900">
+                          "{script.selectedHook}"
+                        </p>
+                        <p className="text-indigo-600 mt-2 text-xs">
+                          Lý do AI chọn: {script.selectedHookReason}
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                        Các Cảnh Quay
+                      </h4>
+                      <div className="space-y-4">
+                        {script.scenes?.map((scene, i) => (
+                          <div
+                            key={i}
+                            className="border-l-2 border-indigo-200 pl-4 py-1"
+                          >
+                            <p className="font-bold text-slate-700">
+                              {scene.name}
+                            </p>
+                            <p className="text-slate-800 mt-1 whitespace-pre-line">
+                              {scene.content}
+                            </p>
+                            <p className="text-slate-500 text-xs mt-1">
+                              🎥 {scene.visualSuggestion}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                        Câu Kết
+                      </h4>
+                      <p className="text-slate-800 font-medium">
+                        "{script.ending}"
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cột phải */}
+                  <div className="space-y-6 text-sm bg-slate-50 p-4 rounded-lg border border-slate-100 h-fit">
+                    <div>
+                      <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
+                        Text on Screen
+                      </h4>
+                      <p className="text-slate-700 bg-white p-2 rounded border border-slate-200">
+                        {script.textOnScreen}
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
+                        Caption
+                      </h4>
+                      <p className="text-slate-700 bg-white p-2 rounded border border-slate-200 whitespace-pre-line">
+                        {script.caption}
+                      </p>
+                    </div>
+                    {script.notes && (
+                      <div>
+                        <h4 className="font-bold text-red-800 mb-1 uppercase text-xs">
+                          Checklist An Toàn
+                        </h4>
+                        <p className="text-red-700 bg-red-50 p-2 rounded border border-red-200">
+                          {script.notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+          {isGeneratingScripts && (
+            <div className="flex flex-col items-center justify-center py-12 bg-white rounded-xl shadow-sm border border-slate-200 border-dashed">
+              <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+              <p className="text-slate-600 font-medium">
+                AI đang xử lý kịch bản dựa trên Content Bible...
+              </p>
+              <p className="text-sm text-indigo-600 font-medium mt-2 bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100">
+                {generationStatus}
+              </p>
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => handleExportPDF(s)} className="text-blue-600">In/PDF</button>
-              <button onClick={() => handleDeleteScript(s.id)} className="text-red-600">Xóa</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderBible = () => (
+    <div className="animate-fade-in flex flex-col h-[calc(100vh-6rem)]">
+      <div className="mb-4">
+        <h2 className="text-2xl font-bold text-slate-800">Content Bible</h2>
+        <p className="text-slate-500 text-sm mt-1">
+          AI sẽ đọc bộ quy chuẩn này mỗi khi tạo kịch bản để đảm bảo đúng định
+          vị thương hiệu Haichai.
+        </p>
+      </div>
+      <textarea
+        className="flex-1 w-full p-6 border border-slate-300 rounded-xl shadow-inner focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm resize-none bg-slate-50 text-slate-800 leading-relaxed"
+        value={bible}
+        onChange={handleBibleChange}
+        spellCheck="false"
+      />
+    </div>
+  );
+
+  const renderSettings = () => {
+    const handleExport = () => {
+      const backup = {
+        bible,
+        scripts,
+        draftScripts,
+        generatedTopics,
+        exportedAt: new Date().toISOString(),
+        ownerEmail: currentUser?.email || '',
+      };
+
+      const dataStr =
+        'data:text/json;charset=utf-8,' +
+        encodeURIComponent(JSON.stringify(backup, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute('href', dataStr);
+      downloadAnchorNode.setAttribute(
+        'download',
+        'haichai_script_studio_backup.json'
+      );
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    };
+
+    return (
+      <div className="animate-fade-in max-w-3xl">
+        <h2 className="text-2xl font-bold text-slate-800 mb-6">
+          Cài đặt & Dữ liệu
+        </h2>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
+          <h3 className="text-lg font-bold mb-4">Đăng nhập Firebase</h3>
+          <div className="text-sm text-slate-600 space-y-2">
+            <p>
+              <strong>Tài khoản:</strong>{' '}
+              {currentUser?.email || 'Chưa đăng nhập'}
+            </p>
+            <p>
+              <strong>Domain được phép:</strong> @haichai.vn, @starspits.vn, @starspirits.vn
+            </p>
+            <p>
+              <strong>Đồng bộ:</strong> {syncStatus}
+            </p>
+            {lastSyncedAt && (
+              <p>
+                <strong>Lần sync gần nhất:</strong>{' '}
+                {lastSyncedAt.toLocaleString('vi-VN')}
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-3 mt-5">
+            {currentUser ? (
+              <button
+                onClick={handleSignOut}
+                className="bg-[#0d71ba] text-white px-4 py-2 rounded-lg font-medium text-sm transition hover:opacity-90 shadow-sm"
+              >
+                Đăng xuất
+              </button>
+            ) : (
+              <button
+                onClick={handleSignInWithGoogle}
+                className="bg-[#0d71ba] text-white px-4 py-2 rounded-lg font-medium text-sm transition hover:opacity-90 shadow-sm"
+              >
+                Đăng nhập Google công ty
+              </button>
+            )}
+
+            <button
+              onClick={handleExport}
+              className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg font-medium text-sm"
+            >
+              Export Backup JSON
+            </button>
+          </div>
+
+          {authError && (
+            <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+              {authError}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
+          <h3 className="text-lg font-bold mb-4">AI Provider & API Key</h3>
+          <p className="text-sm text-slate-500 mb-4">
+            Chọn nhà cung cấp AI, nhập key và model muốn dùng. Key chỉ lưu trên
+            trình duyệt của máy đang dùng, không đẩy key lên Firestore.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Chọn provider
+              </label>
+              <select
+                value={aiProvider}
+                onChange={(e) => handleProviderChange(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
+              >
+                {Object.entries(AI_PROVIDERS).map(([value, config]) => (
+                  <option key={value} value={value}>
+                    {config.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Chọn / nhập model
+              </label>
+              <input
+                list="ai-model-suggestions"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm"
+                placeholder={getDefaultAiModel(aiProvider)}
+                value={aiModel}
+                onChange={(e) => {
+                  setAiModel(e.target.value);
+                  setAiKeyStatus('');
+                }}
+              />
+              <datalist id="ai-model-suggestions">
+                {getAiProviderConfig(aiProvider).models.map((model) => (
+                  <option key={model} value={model} />
+                ))}
+              </datalist>
             </div>
           </div>
-        ))}
-       </div>
-    </div>
-  );
 
-  if (authLoading) return <div className="p-10 text-center">Đang kết nối...</div>;
-  if (!currentUser) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="bg-white p-8 rounded shadow text-center">
-        <h1 className="text-xl font-bold mb-4">Haichai Script Studio</h1>
-        <button onClick={handleSignInWithGoogle} className="bg-blue-600 text-white px-6 py-2 rounded">Đăng nhập Google Workspace</button>
-        {authError && <p className="text-red-600 mt-4 text-sm">{authError}</p>}
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+            {getAiProviderConfig(aiProvider).keyLabel}
+          </label>
+          <input
+            type="password"
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm"
+            placeholder={getAiProviderConfig(aiProvider).placeholder}
+            value={aiApiKey}
+            onChange={(e) => {
+              setAiApiKey(e.target.value);
+              setAiKeyStatus('');
+            }}
+          />
+
+          <div className="flex flex-wrap gap-3 mt-4">
+            <button
+              onClick={handleSaveAiKey}
+              className="bg-[#0d71ba] text-white px-4 py-2 rounded-lg font-medium text-sm transition hover:opacity-90 shadow-sm"
+            >
+              Lưu cấu hình AI
+            </button>
+            <button
+              onClick={handleTestAiKey}
+              disabled={isTestingAiKey}
+              className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg font-medium text-sm disabled:opacity-50"
+            >
+              {isTestingAiKey ? 'Đang test...' : 'Test Key & Model'}
+            </button>
+            <button
+              onClick={() => {
+                setAiApiKey('');
+                localStorage.removeItem(getAiKeyStorageKey(aiProvider));
+                if (aiProvider === 'gemini') localStorage.removeItem('gemini_api_key');
+                setAiKeyStatus(`Đã xoá ${getAiProviderConfig(aiProvider).keyLabel} trên máy này.`);
+              }}
+              className="bg-white border border-red-200 text-red-700 hover:bg-red-50 px-4 py-2 rounded-lg font-medium text-sm"
+            >
+              Xoá Key
+            </button>
+          </div>
+
+          {aiKeyStatus && (
+            <div
+              className={`mt-4 p-3 rounded-lg text-sm border ${
+                aiKeyStatus.includes('dùng được') ||
+                aiKeyStatus.includes('Đã lưu')
+                  ? 'bg-green-50 border-green-200 text-green-700'
+                  : 'bg-amber-50 border-amber-200 text-amber-700'
+              }`}
+            >
+              {aiKeyStatus}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+          <h3 className="text-lg font-bold mb-4">Dữ liệu đang lưu ở đâu?</h3>
+          <div className="text-sm text-slate-600 space-y-2">
+            <p>
+              • <strong>Firestore:</strong> lưu chung Content Bible, thư viện
+              kịch bản, draft và danh sách chủ đề đã tạo cho team Haichai.
+            </p>
+            <p>
+              • <strong>Local backup:</strong> vẫn giữ một bản cache trong trình
+              duyệt để tránh mất dữ liệu khi mạng lỗi.
+            </p>
+            <p>
+              • <strong>AI API Key:</strong> chỉ lưu trên máy người dùng,
+              không sync lên cloud.
+            </p>
+          </div>
+        </div>
       </div>
+    );
+  };
+
+  const renderLoginScreen = () => (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
+        <div className="mb-6">
+          <img
+            src="https://tascusfood.com/haichailogo.png"
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src =
+                'https://placehold.co/180x60/0d2440/FFF?text=HAICHAI+STUDIO';
+            }}
+            alt="Haichai Script Studio"
+            className="h-16 w-auto object-contain mb-4"
+          />
+          <h1 className="text-2xl font-bold text-slate-900">
+            Haichai Script Studio
+          </h1>
+          <p className="text-sm text-slate-500 mt-2">
+            Đăng nhập bằng Google Workspace công ty để sử dụng thư viện kịch bản
+            và đồng bộ Firestore.
+          </p>
+        </div>
+
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm text-slate-600 mb-5">
+          Chỉ cho phép email có đuôi <strong>@haichai.vn</strong> hoặc{' '}
+          <strong>@starspits.vn</strong> hoặc <strong>@starspirits.vn</strong>.
+        </div>
+
+        {authError && (
+          <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700 mb-5">
+            {authError}
+          </div>
+        )}
+
+        <button
+          onClick={handleSignInWithGoogle}
+          className="w-full bg-[#0d71ba] hover:opacity-90 text-white px-5 py-3 rounded-lg font-semibold transition shadow-sm"
+        >
+          Đăng nhập bằng Google công ty
+        </button>
+      </div>
+      {renderModal()}
     </div>
   );
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans text-slate-600">
+        Đang kiểm tra đăng nhập Firebase...
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return renderLoginScreen();
+  }
+
+  // --- MAIN RENDER ---
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex">
       {renderSidebar()}
-      <main className="ml-64 flex-1 p-8 h-screen overflow-y-auto text-slate-800">
+      <main className="ml-64 flex-1 p-8 h-screen overflow-y-auto">
         {activeTab === 'library' && renderLibrary()}
         {activeTab === 'generate-topics' && renderTopicGenerator()}
         {activeTab === 'generate-scripts' && renderScriptGenerator()}
         {activeTab === 'bible' && renderBible()}
         {activeTab === 'settings' && renderSettings()}
       </main>
+
+      {/* Global UI Components  */}
       {renderModal()}
+
+      {/* Global Styles for simple anmations & CSS Reset */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        #root { padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; text-align: left !important; }
+        body { margin: 0; padding: 0; background-color: #f8fafc; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      `,
+        }}
+      />
     </div>
   );
 }
