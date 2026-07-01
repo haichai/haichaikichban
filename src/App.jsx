@@ -362,6 +362,10 @@ const mergeDraftScriptsPreservingLocal = (incomingDrafts = [], currentDrafts = [
   return Array.from(draftsById.values());
 };
 
+// Chặn snapshot Firestore cũ ghi đè draft vừa tạo.
+// Thường xảy ra khi có một lượt sync cũ đang bay trên mạng, sau đó trả về muộn.
+const DRAFT_CLOUD_GUARD_MS = 30000;
+
 // --- REAL AI FUNCTIONS (MULTI-PROVIDER API) ---
 const AI_PROVIDERS = {
   gemini: {
@@ -1052,6 +1056,8 @@ export default function App() {
     generatedTopics: [],
   });
   const syncingFromCloudRef = useRef(false);
+  const pendingDraftIdsRef = useRef(new Set());
+  const lastDraftLocalChangeAtRef = useRef(0);
 
   // AI key chỉ lưu ở máy người dùng, không đẩy lên Firestore.
   const [aiProvider, setAiProvider] = useState(DEFAULT_AI_PROVIDER);
@@ -1281,12 +1287,31 @@ export default function App() {
             if (typeof data.bible === 'string') setBible(data.bible);
             if (Array.isArray(data.scripts)) setScripts(data.scripts);
             if (Array.isArray(data.draftScripts)) {
-              setDraftScripts((currentDrafts) =>
-                mergeDraftScriptsPreservingLocal(
-                  data.draftScripts,
-                  currentDrafts
-                )
+              const incomingDrafts = data.draftScripts;
+              const incomingDraftIds = new Set(
+                incomingDrafts.map((draft) => draft?.id).filter(Boolean)
               );
+              const pendingDraftIds = Array.from(pendingDraftIdsRef.current);
+              const isMissingPendingDraft = pendingDraftIds.some(
+                (id) => !incomingDraftIds.has(id)
+              );
+              const isRecentLocalDraftChange =
+                Date.now() - lastDraftLocalChangeAtRef.current <
+                DRAFT_CLOUD_GUARD_MS;
+
+              if (isMissingPendingDraft && isRecentLocalDraftChange) {
+                setSyncStatus(
+                  'Đang giữ draft vừa tạo, bỏ qua snapshot Firestore cũ'
+                );
+              } else {
+                if (!isMissingPendingDraft) pendingDraftIdsRef.current.clear();
+                setDraftScripts((currentDrafts) =>
+                  mergeDraftScriptsPreservingLocal(
+                    incomingDrafts,
+                    currentDrafts
+                  )
+                );
+              }
             }
             if (Array.isArray(data.generatedTopics)) {
               setGeneratedTopics((currentTopics) =>
@@ -1338,13 +1363,11 @@ export default function App() {
     setSyncStatus('Đang chờ đồng bộ...');
     const timeout = setTimeout(async () => {
       try {
+        const latestData = latestDataRef.current;
         await setDoc(
           getAppDataRef(),
           {
-            bible,
-            scripts,
-            draftScripts,
-            generatedTopics,
+            ...latestData,
             ownerEmail: currentUser.email || '',
             updatedAt: serverTimestamp(),
           },
@@ -1367,23 +1390,34 @@ export default function App() {
   };
 
   const saveDraftScriptsToStorage = async (newDraftScripts) => {
-    setDraftScripts(newDraftScripts);
-    localStorage.setItem('haichai_drafts', JSON.stringify(newDraftScripts));
+    const safeDraftScripts = Array.isArray(newDraftScripts)
+      ? newDraftScripts
+      : [];
+
+    lastDraftLocalChangeAtRef.current = Date.now();
+    safeDraftScripts.forEach((draft) => {
+      if (draft?.id) pendingDraftIdsRef.current.add(draft.id);
+    });
+
+    setDraftScripts(safeDraftScripts);
+    localStorage.setItem('haichai_drafts', JSON.stringify(safeDraftScripts));
     latestDataRef.current = {
       ...latestDataRef.current,
-      draftScripts: newDraftScripts,
+      draftScripts: safeDraftScripts,
     };
 
     if (!currentUser || !cloudReady) return;
 
     try {
+      const latestData = {
+        ...latestDataRef.current,
+        draftScripts: safeDraftScripts,
+      };
+
       await setDoc(
         getAppDataRef(),
         {
-          bible,
-          scripts,
-          draftScripts: newDraftScripts,
-          generatedTopics,
+          ...latestData,
           ownerEmail: currentUser.email || '',
           updatedAt: serverTimestamp(),
         },
