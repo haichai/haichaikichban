@@ -307,7 +307,7 @@ const GEMINI_MODELS = [
   'gemini-1.5-flash',
 ];
 
-const GEMINI_TIMEOUT_MS = 60000;
+const GEMINI_TIMEOUT_MS = 90000;
 
 // Nhận cả key thô hoặc dạng copy từ .env như GEMINI_API_KEY="AIza..."
 const normalizeGeminiApiKey = (value = '') => {
@@ -474,11 +474,25 @@ const extractJsonFromText = (text) => {
 };
 
 // --- REAL AI FUNCTIONS (GEMINI API) ---
+const getSchemaInstruction = (schema) => {
+  if (!schema) return '';
+  const cleanSchema = sanitizeGeminiSchema(schema);
+  return `
+
+QUY TẮC TRẢ VỀ BẮT BUỘC:
+- Chỉ trả về JSON hợp lệ, không markdown, không giải thích thêm.
+- Không bọc trong \`\`\`json.
+- JSON phải parse được bằng JSON.parse().
+- JSON phải bám schema này:
+${JSON.stringify(cleanSchema)}`;
+};
+
+// --- REAL AI FUNCTIONS (GEMINI API) ---
 const callGeminiWithRetry = async (
   systemPrompt,
   userPrompt,
   schema,
-  retries = 1
+  retries = 2
 ) => {
   const apiKey = getStoredGeminiApiKey();
 
@@ -488,15 +502,19 @@ const callGeminiWithRetry = async (
     );
   }
 
-  // Payload REST trực tiếp của Gemini API.
-  // Dùng camelCase và schema đã sanitize để tránh lỗi khi tạo chủ đề/kịch bản dài.
+  // Với prompt dài, responseSchema đôi khi làm Gemini trả lỗi/không có text.
+  // Giữ responseMimeType JSON và đưa schema vào prompt để ổn định hơn.
   const payload = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: `${userPrompt}${getSchemaInstruction(schema)}` }],
+      },
+    ],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: sanitizeGeminiSchema(schema),
-      maxOutputTokens: 24576,
+      maxOutputTokens: 32768,
       temperature: 0.7,
     },
   };
@@ -546,9 +564,6 @@ const callGeminiWithRetry = async (
         if (shouldTryNextModel(error.status, error.rawMessage || error.message))
           break;
 
-        // Không retry quá lâu để tránh treo màn hình “Đang tạo”.
-        if (!error.status || error.status === 400) throw error;
-
         if (i === retries - 1) break;
         await new Promise((res) => setTimeout(res, 1500));
       }
@@ -559,31 +574,21 @@ const callGeminiWithRetry = async (
 };
 
 const generateTopicsFromAI = async (bible, currentScripts) => {
-  const systemPrompt = `Bạn là Content Strategist cho kênh TikTok nhân hiệu Haichai.
-Dựa trên Content Bible và kết quả scan thư viện kịch bản cũ, hãy tạo ra CHÍNH XÁC 30 chủ đề mới theo đúng tỉ lệ sau:
-- 14 chủ đề: Góc khuất / quan điểm ngược
-- 7 chủ đề: Sai lầm / bài học người chủ
-- 6 chủ đề: Hậu trường thật
-- 3 chủ đề: Sản phẩm / niềm tin / giấy tờ
-
-TUYỆT ĐỐI QUAN TRỌNG: Bạn BẮT BUỘC phải tạo ra một mảng chứa ĐÚNG 30 chủ đề. Không được lười biếng làm ít hơn.
+  const baseSystemPrompt = `Bạn là Content Strategist cho kênh TikTok nhân hiệu Haichai.
+Dựa trên Content Bible và kết quả scan thư viện kịch bản cũ, hãy tạo chủ đề mới cho TikTok.
 
 Yêu cầu:
 - Không trùng với các chủ đề đã có trong thư viện.
 - Không biến nội dung thành quảng cáo rượu, không cổ vũ uống rượu.
 - Ưu tiên hook: một con số, quan điểm ngược, gây tò mò, khơi gợi nỗi đau, trích lời nói thật.
-- duplicateRiskScore là điểm đánh giá từ 0-100 về khả năng trùng lặp ý tưởng với thư viện cũ (càng cao càng dễ trùng).`;
-
-  const userPrompt = `Content Bible:\n${bible}\n\nThư viện kịch bản cũ (Tránh trùng lặp):\n${JSON.stringify(
-    currentScripts.map((s) => s.topic)
-  )}\n\nHãy tạo ĐẦY ĐỦ 30 chủ đề ngay bây giờ. BẮT BUỘC PHẢI CÓ ĐỦ 30 ITEMS TRONG JSON.`;
+- duplicateRiskScore là điểm đánh giá từ 0-100 về khả năng trùng lặp ý tưởng với thư viện cũ (càng cao càng dễ trùng).
+- Chỉ trả JSON hợp lệ.`;
 
   const schema = {
     type: 'OBJECT',
     properties: {
       topics: {
         type: 'ARRAY',
-        description: 'Mảng này BẮT BUỘC phải chứa ĐÚNG 30 object chủ đề.',
         items: {
           type: 'OBJECT',
           properties: {
@@ -614,16 +619,47 @@ Yêu cầu:
     required: ['topics'],
   };
 
-  const result = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
-  const rawTopics = Array.isArray(result?.topics) ? result.topics : [];
+  const oldTopics = currentScripts.map((s) => s.topic).filter(Boolean);
+  const categoryPlan = [
+    { category: 'Góc khuất / quan điểm ngược', count: 14 },
+    { category: 'Sai lầm / bài học người chủ', count: 7 },
+    { category: 'Hậu trường thật', count: 6 },
+    { category: 'Sản phẩm / niềm tin / giấy tờ', count: 3 },
+  ];
 
-  if (rawTopics.length === 0) {
-    throw new Error(
-      'Gemini đã kết nối được nhưng không trả về mảng topics. Hãy thử rút gọn Content Bible hoặc bấm tạo lại.'
+  const allTopics = [];
+
+  for (const item of categoryPlan) {
+    emitGeminiStatus(
+      `Đang tạo ${item.count} chủ đề nhóm “${item.category}”...`
+    );
+
+    const userPrompt = `Content Bible:\n${bible}\n\nThư viện kịch bản cũ cần tránh trùng:\n${JSON.stringify(
+      oldTopics
+    )}\n\nHãy tạo CHÍNH XÁC ${item.count} chủ đề cho nhóm: ${item.category}.\n\nYêu cầu JSON:\n{\n  "topics": [\n    {\n      "category": "${item.category}",\n      "topicName": "...",\n      "angle": "...",\n      "hookType": "...",\n      "suggestedHook": "...",\n      "mainMessage": "...",\n      "whyItCanWork": "...",\n      "avoidRepeating": "...",\n      "duplicateRiskScore": 0\n    }\n  ]\n}\n\nBẮT BUỘC mảng topics có đúng ${item.count} phần tử. Field category của mọi phần tử phải là "${item.category}".`;
+
+    const result = await callGeminiWithRetry(baseSystemPrompt, userPrompt, schema, 2);
+    const chunkTopics = Array.isArray(result?.topics) ? result.topics : [];
+
+    if (chunkTopics.length === 0) {
+      throw new Error(
+        `Gemini đã kết nối được nhưng không trả về chủ đề cho nhóm “${item.category}”.`
+      );
+    }
+
+    allTopics.push(
+      ...chunkTopics.slice(0, item.count).map((topic) => ({
+        ...topic,
+        category: item.category,
+      }))
     );
   }
 
-  return rawTopics.map((t, index) => ({
+  if (allTopics.length === 0) {
+    throw new Error('Gemini đã kết nối được nhưng không trả về mảng topics.');
+  }
+
+  return allTopics.map((t, index) => ({
     id: `top_${Date.now()}_${index}`,
     ...t,
     selected: false,
@@ -1132,8 +1168,8 @@ export default function App() {
         setGeneratedTopics(topics);
       } else {
         showAlert(
-          'Lỗi',
-          'AI không trả về dữ liệu. Hãy bấm “Test Gemini Key” trong Cài đặt rồi thử lại.'
+          'Lỗi Gemini',
+          'Gemini kết nối được nhưng trả về 0 chủ đề. Hãy thử bấm Tạo chủ đề lại hoặc rút gọn Content Bible.'
         );
       }
     } catch (error) {
