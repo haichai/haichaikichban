@@ -307,7 +307,7 @@ const GEMINI_MODELS = [
   'gemini-1.5-flash',
 ];
 
-const GEMINI_TIMEOUT_MS = 30000;
+const GEMINI_TIMEOUT_MS = 60000;
 
 // Nhận cả key thô hoặc dạng copy từ .env như GEMINI_API_KEY="AIza..."
 const normalizeGeminiApiKey = (value = '') => {
@@ -328,6 +328,55 @@ const getStoredGeminiApiKey = () =>
   typeof window !== 'undefined'
     ? normalizeGeminiApiKey(localStorage.getItem('gemini_api_key') || '')
     : '';
+
+// Gemini response_schema chỉ nhận một tập con của JSON Schema.
+// Hàm này giữ nguyên cấu trúc dữ liệu nhưng bỏ các field dễ gây 400 như description/title/default.
+const sanitizeGeminiSchema = (schema) => {
+  if (Array.isArray(schema)) return schema.map(sanitizeGeminiSchema);
+  if (!schema || typeof schema !== 'object') return schema;
+
+  const allowedKeys = new Set([
+    'type',
+    'format',
+    'items',
+    'properties',
+    'required',
+    'enum',
+    'nullable',
+    'propertyOrdering',
+    'minimum',
+    'maximum',
+    'minItems',
+    'maxItems',
+  ]);
+
+  const cleaned = {};
+  Object.entries(schema).forEach(([key, value]) => {
+    if (!allowedKeys.has(key)) return;
+    cleaned[key] = sanitizeGeminiSchema(value);
+  });
+
+  return cleaned;
+};
+
+const getGeminiResponseText = (result) => {
+  const candidate = result?.candidates?.[0];
+  const parts = candidate?.content?.parts || [];
+  const text = parts
+    .map((part) => part?.text || '')
+    .join('\n')
+    .trim();
+
+  if (text) return text;
+
+  const finishReason = candidate?.finishReason || 'UNKNOWN';
+  const blockReason = result?.promptFeedback?.blockReason;
+  throw new Error(
+    `Gemini có phản hồi nhưng không có nội dung text. finishReason=${finishReason}${
+      blockReason ? `, blockReason=${blockReason}` : ''
+    }.`
+  );
+};
 
 const emitGeminiStatus = (message) => {
   if (typeof window !== 'undefined') {
@@ -439,15 +488,15 @@ const callGeminiWithRetry = async (
     );
   }
 
-  // Payload dùng format REST trực tiếp của Gemini API.
-  // Lưu ý: response_mime_type/response_schema giúp tránh lỗi 400 khi gọi bằng fetch.
+  // Payload REST trực tiếp của Gemini API.
+  // Dùng camelCase và schema đã sanitize để tránh lỗi khi tạo chủ đề/kịch bản dài.
   const payload = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
+    systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
     generationConfig: {
-      response_mime_type: 'application/json',
-      response_schema: schema,
-      max_output_tokens: 8192,
+      responseMimeType: 'application/json',
+      responseSchema: sanitizeGeminiSchema(schema),
+      maxOutputTokens: 24576,
       temperature: 0.7,
     },
   };
@@ -486,7 +535,7 @@ const callGeminiWithRetry = async (
 
         const result = await response.json();
         emitGeminiStatus('Gemini đã phản hồi, đang đọc JSON...');
-        const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        const responseText = getGeminiResponseText(result);
         return extractJsonFromText(responseText);
       } catch (error) {
         lastError = error;
@@ -565,18 +614,20 @@ Yêu cầu:
     required: ['topics'],
   };
 
-  try {
-    const result = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
-    const rawTopics = result.topics || [];
-    return rawTopics.map((t, index) => ({
-      id: `top_${Date.now()}_${index}`,
-      ...t,
-      selected: false,
-    }));
-  } catch (error) {
-    console.error('AI Generation Error:', error);
-    return [];
+  const result = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
+  const rawTopics = Array.isArray(result?.topics) ? result.topics : [];
+
+  if (rawTopics.length === 0) {
+    throw new Error(
+      'Gemini đã kết nối được nhưng không trả về mảng topics. Hãy thử rút gọn Content Bible hoặc bấm tạo lại.'
+    );
   }
+
+  return rawTopics.map((t, index) => ({
+    id: `top_${Date.now()}_${index}`,
+    ...t,
+    selected: false,
+  }));
 };
 
 const generateScriptsBatchFromAI = async (topics, bible, currentScripts) => {
@@ -641,29 +692,30 @@ TUYỆT ĐỐI QUAN TRỌNG: Đầu vào có bao nhiêu chủ đề, bạn PHẢ
     required: ['scripts'],
   };
 
-  try {
-    const result = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
-    const generatedScripts = result.scripts || [];
+  const result = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
+  const generatedScripts = Array.isArray(result?.scripts) ? result.scripts : [];
 
-    // Map dữ liệu AI trả về với Topic ban đầu
-    return generatedScripts.map((rawScript) => {
-      const originalTopic =
-        topics.find((t) => t.id === rawScript.topicId) || topics[0];
-      return {
-        id: `scr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        category: originalTopic.category,
-        topic: originalTopic.topicName,
-        angle: originalTopic.angle,
-        status: 'draft',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ...rawScript,
-      };
-    });
-  } catch (error) {
-    console.error('AI Batch Generation Error:', error);
-    return [];
+  if (generatedScripts.length === 0) {
+    throw new Error(
+      'Gemini đã kết nối được nhưng không trả về mảng scripts cho cụm kịch bản này.'
+    );
   }
+
+  // Map dữ liệu AI trả về với Topic ban đầu
+  return generatedScripts.map((rawScript) => {
+    const originalTopic =
+      topics.find((t) => t.id === rawScript.topicId) || topics[0];
+    return {
+      id: `scr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      category: originalTopic.category,
+      topic: originalTopic.topicName,
+      angle: originalTopic.angle,
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...rawScript,
+    };
+  });
 };
 
 // --- MAIN APP COMPONENT ---
@@ -1277,7 +1329,7 @@ export default function App() {
           </div>
         `
                 )
-                .join('')
+                .join('\n')
             : '<p>Chưa có phân cảnh.</p>'
         }
 
