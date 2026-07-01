@@ -344,6 +344,24 @@ const mergeTopicsPreservingLocalSelection = (incomingTopics = [], currentTopics 
   });
 };
 
+// Firestore cũng có thể trả snapshot cũ ngay sau khi AI vừa tạo draft.
+// Nếu ghi đè thẳng bằng snapshot cũ, app báo tạo thành công nhưng tab Draft lại trống.
+const mergeDraftScriptsPreservingLocal = (incomingDrafts = [], currentDrafts = []) => {
+  const draftsById = new Map();
+
+  incomingDrafts.forEach((draft) => {
+    if (draft?.id) draftsById.set(draft.id, draft);
+  });
+
+  currentDrafts.forEach((draft) => {
+    if (draft?.id && !draftsById.has(draft.id)) {
+      draftsById.set(draft.id, draft);
+    }
+  });
+
+  return Array.from(draftsById.values());
+};
+
 // --- REAL AI FUNCTIONS (MULTI-PROVIDER API) ---
 const AI_PROVIDERS = {
   gemini: {
@@ -1262,8 +1280,14 @@ export default function App() {
 
             if (typeof data.bible === 'string') setBible(data.bible);
             if (Array.isArray(data.scripts)) setScripts(data.scripts);
-            if (Array.isArray(data.draftScripts))
-              setDraftScripts(data.draftScripts);
+            if (Array.isArray(data.draftScripts)) {
+              setDraftScripts((currentDrafts) =>
+                mergeDraftScriptsPreservingLocal(
+                  data.draftScripts,
+                  currentDrafts
+                )
+              );
+            }
             if (Array.isArray(data.generatedTopics)) {
               setGeneratedTopics((currentTopics) =>
                 mergeTopicsPreservingLocalSelection(
@@ -1340,6 +1364,37 @@ export default function App() {
 
   const saveScriptsToStorage = (newScripts) => {
     setScripts(newScripts);
+  };
+
+  const saveDraftScriptsToStorage = async (newDraftScripts) => {
+    setDraftScripts(newDraftScripts);
+    localStorage.setItem('haichai_drafts', JSON.stringify(newDraftScripts));
+    latestDataRef.current = {
+      ...latestDataRef.current,
+      draftScripts: newDraftScripts,
+    };
+
+    if (!currentUser || !cloudReady) return;
+
+    try {
+      await setDoc(
+        getAppDataRef(),
+        {
+          bible,
+          scripts,
+          draftScripts: newDraftScripts,
+          generatedTopics,
+          ownerEmail: currentUser.email || '',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setSyncStatus('Đã đồng bộ draft lên Firestore');
+      setLastSyncedAt(new Date());
+    } catch (error) {
+      console.error('Firestore draft save error:', error);
+      setSyncStatus(`Lỗi lưu draft Firestore: ${error.message}`);
+    }
   };
 
   const handleBibleChange = (e) => {
@@ -1469,7 +1524,10 @@ export default function App() {
       );
 
       if (newScripts && newScripts.length > 0) {
-        setDraftScripts((prev) => [...prev, ...newScripts]);
+        const currentDrafts = Array.isArray(latestDataRef.current.draftScripts)
+          ? latestDataRef.current.draftScripts
+          : draftScripts;
+        await saveDraftScriptsToStorage([...currentDrafts, ...newScripts]);
         setCustomTopicText('');
         setActiveTab('generate-scripts');
         showAlert(
@@ -1541,8 +1599,11 @@ export default function App() {
           );
 
           if (newScripts && newScripts.length > 0) {
+            const currentDrafts = Array.isArray(latestDataRef.current.draftScripts)
+              ? latestDataRef.current.draftScripts
+              : draftScripts;
             generatedCount += newScripts.length;
-            setDraftScripts((prev) => [...prev, ...newScripts]);
+            await saveDraftScriptsToStorage([...currentDrafts, ...newScripts]);
           } else {
             errors.push(`Cụm ${chunkNumber}: AI không trả về kịch bản.`);
           }
