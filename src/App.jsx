@@ -608,7 +608,7 @@ export default function App() {
 
   const renderTopicGenerator = () => (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Tạo Chủ đề & Ý tưởng</h2>
+      <h2 className="text-2xl font-bold mb-6">Tạo Chủ đề </h2>
       <div className="flex gap-4 mb-6">
         <button onClick={handleScanLibrary} className="bg-blue-600 text-white px-4 py-2 rounded">Scan Thư Viện</button>
         <button onClick={handleGenerateTopics} disabled={isGeneratingTopics} className="bg-indigo-600 text-white px-4 py-2 rounded">{isGeneratingTopics ? 'Đang tạo...' : 'Tạo Chủ Đề Tự Động'}</button>
