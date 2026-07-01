@@ -324,6 +324,26 @@ const EMPTY_MANUAL_SCRIPT = {
   notes: '',
 };
 
+
+// Firestore có thể trả về snapshot cũ ngay sau khi user tick chọn chủ đề.
+// Giữ trạng thái selected hiện tại trên máy để checkbox không bị tự hủy tick.
+const mergeTopicsPreservingLocalSelection = (incomingTopics = [], currentTopics = []) => {
+  const localSelectionById = new Map(
+    currentTopics.map((topic) => [topic.id, Boolean(topic.selected)])
+  );
+
+  return incomingTopics.map((topic) => {
+    if (!localSelectionById.has(topic.id)) {
+      return { ...topic, selected: Boolean(topic.selected) };
+    }
+
+    return {
+      ...topic,
+      selected: localSelectionById.get(topic.id),
+    };
+  });
+};
+
 // --- REAL AI FUNCTIONS (MULTI-PROVIDER API) ---
 const AI_PROVIDERS = {
   gemini: {
@@ -1244,8 +1264,14 @@ export default function App() {
             if (Array.isArray(data.scripts)) setScripts(data.scripts);
             if (Array.isArray(data.draftScripts))
               setDraftScripts(data.draftScripts);
-            if (Array.isArray(data.generatedTopics))
-              setGeneratedTopics(data.generatedTopics);
+            if (Array.isArray(data.generatedTopics)) {
+              setGeneratedTopics((currentTopics) =>
+                mergeTopicsPreservingLocalSelection(
+                  data.generatedTopics,
+                  currentTopics
+                )
+              );
+            }
 
             setSyncStatus('Đã tải dữ liệu từ Firestore');
           } else {
@@ -1470,7 +1496,9 @@ export default function App() {
 
   const toggleTopicSelection = (id) => {
     setGeneratedTopics((topics) =>
-      topics.map((t) => (t.id === id ? { ...t, selected: !t.selected } : t))
+      topics.map((t) =>
+        t.id === id ? { ...t, selected: !Boolean(t.selected) } : t
+      )
     );
   };
 
@@ -2472,8 +2500,12 @@ export default function App() {
                       <td className="px-4 py-4 text-center">
                         <input
                           type="checkbox"
-                          checked={topic.selected}
-                          onChange={() => {}} // Handled by tr click
+                          checked={Boolean(topic.selected)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleTopicSelection(topic.id);
+                          }}
                           className="w-4 h-4 text-[#0d71ba] rounded border-slate-300 focus:ring-indigo-500"
                         />
                       </td>
