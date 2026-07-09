@@ -1,9 +1,6 @@
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App.jsx';
-
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+export default {
+  async fetch(request, env, ctx) {
+    const destinationURL = "https://haichai-script-studio.web.app/";
+    return Response.redirect(destinationURL, 301);
+  },
+};
