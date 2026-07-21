@@ -865,7 +865,18 @@ const callAIWithRetry = async (
             },
           }),
         };
-        response = await fetchWithTimeout(proxyUrl, proxyOptions);
+        try {
+          response = await fetchWithTimeout(proxyUrl, proxyOptions);
+          // Nếu deploy tĩnh trên Cloudflare Pages (không có backend node), server sẽ trả về 405 hoặc 404.
+          // Lúc này ta tự động fallback gọi trực tiếp (direct client-side fetch)
+          if (response.status === 404 || response.status === 405) {
+            console.warn(`Proxy endpoint returned ${response.status}. Falling back to direct client-side fetch...`);
+            response = await fetchWithTimeout(url, options);
+          }
+        } catch (proxyError) {
+          console.warn('Proxy request failed, falling back to direct client-side fetch:', proxyError);
+          response = await fetchWithTimeout(url, options);
+        }
       } else {
         response = await fetchWithTimeout(url, options);
       }
