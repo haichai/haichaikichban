@@ -786,34 +786,18 @@ const buildAIRequest = ({
     headers['X-Title'] = 'Haichai Script Studio';
   }
 
-  const isReasoningModel = String(model).toLowerCase().includes('reasoning') ||
-                           String(model).toLowerCase().includes('o1-') ||
-                           String(model).toLowerCase().includes('o3-') ||
-                           String(model).toLowerCase().includes('thinking');
-
   const body = {
     model,
-    messages: isReasoningModel
-      ? [
-          {
-            role: 'user',
-            content: `SYSTEM INSTRUCTIONS:\n${systemPrompt}\n\nUSER REQUEST:\n${fullUserPrompt}`,
-          },
-        ]
-      : [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: fullUserPrompt },
-        ],
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: fullUserPrompt },
+    ],
+    temperature: temperature,
+    max_tokens: getAiProviderConfig(provider).maxOutputTokens,
   };
 
-  if (isReasoningModel) {
-    body.max_completion_tokens = getAiProviderConfig(provider).maxOutputTokens;
-  } else {
-    body.max_tokens = getAiProviderConfig(provider).maxOutputTokens;
-    if (useJsonMode) {
-      body.temperature = temperature;
-      body.response_format = { type: 'json_object' };
-    }
+  if (useJsonMode) {
+    body.response_format = { type: 'json_object' };
   }
 
   return {
@@ -881,18 +865,7 @@ const callAIWithRetry = async (
             },
           }),
         };
-        try {
-          response = await fetchWithTimeout(proxyUrl, proxyOptions);
-          // Nếu deploy tĩnh trên Cloudflare Pages (không có backend node), server sẽ trả về 405 hoặc 404.
-          // Lúc này ta tự động fallback gọi trực tiếp (direct client-side fetch)
-          if (response.status === 404 || response.status === 405) {
-            console.warn(`Proxy endpoint returned ${response.status}. Falling back to direct client-side fetch...`);
-            response = await fetchWithTimeout(url, options);
-          }
-        } catch (proxyError) {
-          console.warn('Proxy request failed, falling back to direct client-side fetch:', proxyError);
-          response = await fetchWithTimeout(url, options);
-        }
+        response = await fetchWithTimeout(proxyUrl, proxyOptions);
       } else {
         response = await fetchWithTimeout(url, options);
       }
