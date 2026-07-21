@@ -793,19 +793,27 @@ const buildAIRequest = ({
 
   const body = {
     model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: fullUserPrompt },
-    ],
-    max_tokens: getAiProviderConfig(provider).maxOutputTokens,
+    messages: isReasoningModel
+      ? [
+          {
+            role: 'user',
+            content: `SYSTEM INSTRUCTIONS:\n${systemPrompt}\n\nUSER REQUEST:\n${fullUserPrompt}`,
+          },
+        ]
+      : [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: fullUserPrompt },
+        ],
   };
 
-  if (!isReasoningModel && useJsonMode) {
-    body.temperature = temperature;
-  }
-
-  if (useJsonMode && !isReasoningModel) {
-    body.response_format = { type: 'json_object' };
+  if (isReasoningModel) {
+    body.max_completion_tokens = getAiProviderConfig(provider).maxOutputTokens;
+  } else {
+    body.max_tokens = getAiProviderConfig(provider).maxOutputTokens;
+    if (useJsonMode) {
+      body.temperature = temperature;
+      body.response_format = { type: 'json_object' };
+    }
   }
 
   return {
