@@ -200,6 +200,40 @@ const IconPlus = () => (
   </svg>
 );
 
+const IconMenu = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <line x1="4" x2="20" y1="12" y2="12" />
+    <line x1="4" x2="20" y1="6" y2="6" />
+    <line x1="4" x2="20" y1="18" y2="18" />
+  </svg>
+);
+
+const IconClose = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M18 6 6 18M6 6l12 12" />
+  </svg>
+);
+
 // --- CONSTANTS & MOCK DATA ---
 const DEFAULT_CONTENT_BIBLE = `[HAICHAI CONTENT BIBLE
 Bộ quy chuẩn nội dung cho TikTok nhân hiệu & kênh thương hiệu
@@ -410,10 +444,27 @@ const AI_PROVIDERS = {
       'meta-llama/llama-3.3-70b-instruct',
     ],
   },
+  grok: {
+    label: 'Grok / xAI',
+    keyLabel: 'xAI API Key',
+    placeholder: 'xai-...',
+    maxOutputTokens: 4096,
+    models: [
+      'grok-3-mini-fast',
+      'grok-4.5',
+      'grok-4.3',
+      'grok-4.20-0309-non-reasoning',
+      'grok-4.20-0309-reasoning',
+      'grok-4.20-multi-agent-0309',
+      'grok-build-0.1',
+      'grok-2-1212',
+      'grok-beta',
+    ],
+  },
 };
 
 const DEFAULT_AI_PROVIDER = 'gemini';
-const AI_TIMEOUT_MS = 90000;
+const AI_TIMEOUT_MS = 120000; // Tăng lên 120s giúp giảm lỗi timeout khi hệ thống AI quá tải hoặc viết kịch bản dài
 const SCRIPT_BATCH_SIZE = 5;
 
 const getAiProviderConfig = (provider) =>
@@ -424,6 +475,7 @@ const getDefaultAiModel = (provider) =>
 
 const getAiKeyStorageKey = (provider) => `haichai_ai_${provider}_api_key`;
 const getAiModelStorageKey = (provider) => `haichai_ai_${provider}_model`;
+const getAiBaseUrlStorageKey = (provider) => `haichai_ai_${provider}_base_url`;
 
 const normalizeApiKey = (value = '', provider = DEFAULT_AI_PROVIDER) => {
   let key = String(value || '').trim();
@@ -446,6 +498,7 @@ const normalizeApiKey = (value = '', provider = DEFAULT_AI_PROVIDER) => {
       'VITE_OPENROUTER_API_KEY',
       'REACT_APP_OPENROUTER_API_KEY',
     ],
+    grok: ['XAI_API_KEY', 'GROK_API_KEY', 'VITE_XAI_API_KEY', 'VITE_GROK_API_KEY'],
   };
 
   const envNames = envNamesByProvider[provider] || [];
@@ -461,6 +514,7 @@ const normalizeApiKey = (value = '', provider = DEFAULT_AI_PROVIDER) => {
     openai: /sk-[0-9A-Za-z_-]{20,}/,
     groq: /gsk_[0-9A-Za-z_-]{20,}/,
     openrouter: /sk-or-v1-[0-9A-Za-z_-]{20,}/,
+    grok: /(?:xai|sk)-[0-9A-Za-z_-]{20,}/,
   };
 
   const rawKeyMatch = key.match(rawPatterns[provider]);
@@ -475,6 +529,7 @@ const getStoredAIConfig = () => {
       provider: DEFAULT_AI_PROVIDER,
       apiKey: '',
       model: getDefaultAiModel(DEFAULT_AI_PROVIDER),
+      baseUrl: '',
     };
   }
 
@@ -488,11 +543,14 @@ const getStoredAIConfig = () => {
   const storedModel =
     localStorage.getItem(getAiModelStorageKey(safeProvider)) ||
     getDefaultAiModel(safeProvider);
+  const storedBaseUrl =
+    localStorage.getItem(getAiBaseUrlStorageKey(safeProvider)) || '';
 
   return {
     provider: safeProvider,
     apiKey: normalizeApiKey(storedKey, safeProvider),
     model: storedModel.trim() || getDefaultAiModel(safeProvider),
+    baseUrl: storedBaseUrl.trim(),
   };
 };
 
@@ -671,10 +729,12 @@ const buildAIRequest = ({
   userPrompt,
   schema,
   useJsonMode = true,
+  baseUrl = '',
+  temperature = 0.7,
 }) => {
   const fullUserPrompt = `${userPrompt}${getSchemaInstruction(schema)}`;
 
-  if (provider === 'gemini') {
+  if (provider === 'gemini' && !baseUrl) {
     return {
       url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       options: {
@@ -694,7 +754,7 @@ const buildAIRequest = ({
           generationConfig: {
             responseMimeType: 'application/json',
             maxOutputTokens: getAiProviderConfig(provider).maxOutputTokens,
-            temperature: 0.7,
+            temperature: temperature,
           },
         }),
       },
@@ -705,7 +765,16 @@ const buildAIRequest = ({
     openai: 'https://api.openai.com/v1/chat/completions',
     groq: 'https://api.groq.com/openai/v1/chat/completions',
     openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+    grok: 'https://api.x.ai/v1/chat/completions',
   };
+
+  let endpoint = endpoints[provider];
+  if (baseUrl) {
+    endpoint = baseUrl.trim();
+    if (!endpoint.endsWith('/chat/completions')) {
+      endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
+    }
+  }
 
   const headers = {
     'Content-Type': 'application/json',
@@ -723,7 +792,7 @@ const buildAIRequest = ({
       { role: 'system', content: systemPrompt },
       { role: 'user', content: fullUserPrompt },
     ],
-    temperature: 0.7,
+    temperature: temperature,
     max_tokens: getAiProviderConfig(provider).maxOutputTokens,
   };
 
@@ -732,7 +801,7 @@ const buildAIRequest = ({
   }
 
   return {
-    url: endpoints[provider],
+    url: endpoint,
     options: {
       method: 'POST',
       headers,
@@ -745,9 +814,10 @@ const callAIWithRetry = async (
   systemPrompt,
   userPrompt,
   schema,
-  retries = 2
+  retries = 2,
+  temperature = 0.7
 ) => {
-  const { provider, apiKey, model } = getStoredAIConfig();
+  const { provider, apiKey, model, baseUrl } = getStoredAIConfig();
   const label = getAiProviderConfig(provider).label;
 
   if (!apiKey) {
@@ -773,9 +843,32 @@ const callAIWithRetry = async (
         userPrompt,
         schema,
         useJsonMode,
+        baseUrl,
+        temperature,
       });
 
-      const response = await fetchWithTimeout(url, options);
+      let response;
+      if (provider !== 'gemini' || baseUrl) {
+        // Route through local Express server proxy to avoid CORS/Failed to fetch
+        const proxyUrl = '/api/ai-proxy';
+        const proxyOptions = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url,
+            options: {
+              method: options.method,
+              headers: options.headers,
+              body: options.body,
+            },
+          }),
+        };
+        response = await fetchWithTimeout(proxyUrl, proxyOptions);
+      } else {
+        response = await fetchWithTimeout(url, options);
+      }
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -796,8 +889,7 @@ const callAIWithRetry = async (
       if (
         useJsonMode &&
         provider !== 'gemini' &&
-        error.status === 400 &&
-        String(error.rawMessage || error.message).toLowerCase().includes('response_format')
+        error.status === 400
       ) {
         useJsonMode = false;
         continue;
@@ -813,31 +905,46 @@ const callAIWithRetry = async (
   throw lastError || new Error(`Không gọi được ${label}.`);
 };
 
-const generateTopicsFromAI = async (bible, currentScripts, topicCount = 30) => {
+const generateTopicsFromAI = async (bible, currentScripts, topicCount = 30, topicFocusPrompt = '') => {
   const safeTopicCount = TOPIC_COUNT_OPTIONS.includes(Number(topicCount))
     ? Number(topicCount)
     : 30;
   const distributionLines = getTopicDistributionLines(safeTopicCount);
 
-  const systemPrompt = `Bạn là Content Strategist cho kênh TikTok nhân hiệu Haichai.
+  const systemPrompt = `Bạn là Content Strategist xuất sắc cho kênh TikTok nhân hiệu Haichai.
 Dựa trên Content Bible và thư viện kịch bản cũ, hãy tạo ra CHÍNH XÁC ${safeTopicCount} chủ đề mới theo đúng tỉ lệ sau:
 ${distributionLines}
 
-TUYỆT ĐỐI QUAN TRỌNG:
-- Chỉ trả về JSON thuần, không markdown, không giải thích.
-- Không bọc JSON trong \`\`\`json.
-- JSON phải parse được bằng JSON.parse().
-- BẮT BUỘC mảng topics có đúng ${safeTopicCount} items.
-- Không trùng với các chủ đề đã có trong thư viện.
-- Không biến nội dung thành quảng cáo rượu, không cổ vũ uống rượu.
-- Ưu tiên hook: một con số, quan điểm ngược, gây tò mò, khơi gợi nỗi đau, trích lời nói thật.
-- duplicateRiskScore là điểm đánh giá từ 0-100 về khả năng trùng lặp ý tưởng với thư viện cũ.`;
+TUYỆT ĐỐI QUAN TRỌNG ĐỂ ĐẢM BẢO CHẤT LƯỢNG VÀ TRÁNH TRÙNG LẶP Ý TƯỞNG:
+1. ĐA DẠNG HÓA GÓC NHÌN (CỰC KỲ QUAN TRỌNG): Các chủ đề được tạo ra phải vô cùng phong phú, tuyệt đối không được na ná hay lặp đi lặp lại một ý tưởng cũ. Hãy khai thác từ nhiều lăng kính độc đáo khác nhau:
+   - Góc nhìn tâm lý học hành vi / Thói quen người tiêu dùng.
+   - Góc nhìn sai lầm vận hành thực tế / Bài học xương máu mất tiền tỷ của người chủ.
+   - Góc nhìn quản trị nhân sự / Tuyển dụng / Lòng trung thành của nhân sự mở chuỗi.
+   - Góc nhìn phân tích tài chính / Tối ưu chi phí / Dự phòng dòng tiền.
+   - Góc nhìn bóc trần sự thật ngầm hiểu (Insights) mà ít ai dám nói trong ngành.
+   - Góc nhìn hậu trường chuẩn bị, giấy tờ kiểm định chất lượng, quy trình khép kín tạo dựng niềm tin.
+2. BIẾN HÓA CẤU TRÚC NGỮ PHÁP TIÊU ĐỀ: Tuyệt đối không dùng lặp đi lặp lại các cụm từ mở đầu sáo rỗng như "Sai lầm khi...", "Sự thật về...", "Tại sao bạn...". Hãy biến hóa linh hoạt cấu trúc câu, ví dụ: "Mua danh ba vạn...", "Đừng vội mở quán nếu chưa biết...", "3 câu hỏi cắt đuôi môi giới mặt bằng...", "Công thức tính điểm hòa vốn Haichai...", v.v.
+3. KHÔNG TRÙNG LẶP Ý TƯỞNG GIỮA CÁC CHỦ ĐỀ: Mỗi chủ đề trong danh sách ${safeTopicCount} chủ đề phải là một từ khóa hoàn toàn khác nhau, góc tiếp cận độc lập, không sinh ra nhiều chủ đề na ná nhau cùng nói về một khía cạnh.
+4. QUY TẮC PHẢN HỒI:
+   - Chỉ trả về JSON thuần, không markdown, không giải thích.
+   - Không bọc JSON trong \`\`\`json.
+   - JSON phải parse được bằng JSON.parse().
+   - BẮT BUỘC mảng topics có đúng ${safeTopicCount} items.
+   - Không trùng với các chủ đề đã có trong thư viện kịch bản cũ.
+   - Không biến nội dung thành quảng cáo rượu, không cổ vũ uống rượu.
+   - Ưu tiên hook hấp dẫn, bất ngờ, gây tò mò cực lớn hoặc khơi gợi nỗi đau/mong muốn thật của người xem.
+   - duplicateRiskScore là điểm đánh giá từ 0-100 về khả năng trùng lặp ý tưởng với thư viện cũ (càng thấp càng an toàn).`;
 
   const oldTopics = currentScripts.map((s) => s.topic).filter(Boolean);
 
+  let focusInstruction = '';
+  if (topicFocusPrompt && topicFocusPrompt.trim()) {
+    focusInstruction = `\n\nYÊU CẦU ĐỊNH HƯỚNG TỪ NGƯỜI DÙNG (CỰC KỲ ƯU TIÊN): Hãy đặc biệt ưu tiên sáng tạo các chủ đề xoay quanh định hướng, từ khóa hoặc ý tưởng sau: "${topicFocusPrompt.trim()}". Hãy khai thác thật sâu, thật đa dạng từ khóa này dưới nhiều nhóm nội dung quy định ở trên nhưng vẫn giữ vững phong cách của Haichai Content Bible.`;
+  }
+
   const userPrompt = `Content Bible:\n${bible}\n\nThư viện kịch bản cũ cần tránh trùng:\n${JSON.stringify(
     oldTopics
-  )}\n\nHãy tạo ĐẦY ĐỦ ${safeTopicCount} chủ đề ngay bây giờ theo đúng tỉ lệ:\n${distributionLines}\n\nCHỈ TRẢ VỀ JSON THUẦN THEO FORMAT SAU:
+  )}\n\nHãy tạo ĐẦY ĐỦ ${safeTopicCount} chủ đề ngay bây giờ theo đúng tỉ lệ:\n${distributionLines}${focusInstruction}\n\nCHỈ TRẢ VỀ JSON THUẦN THEO FORMAT SAU:
 {
   "topics": [
     {
@@ -860,10 +967,9 @@ BẮT BUỘC:
 - category chỉ được nằm trong 4 nhóm nội dung đã nêu ở trên.
 - duplicateRiskScore phải là số nguyên từ 0 đến 100.`;
 
-  // TỐI ƯU TỐC ĐỘ:
-  // Không truyền schema/responseSchema cho mục Tạo chủ đề nữa.
-  // Gọi 1 lần duy nhất để tạo đủ số chủ đề đã chọn, thay vì chia nhiều lần tuần tự.
-  const result = await callAIWithRetry(systemPrompt, userPrompt, null, 1);
+  // TỐI ƯU TỐC ĐỘ VÀ SÁNG TẠO:
+  // Truyền temperature = 0.85 để kích thích sự phong phú và khác biệt tối đa của các chủ đề.
+  const result = await callAIWithRetry(systemPrompt, userPrompt, null, 1, 0.85);
   const rawTopics = Array.isArray(result?.topics) ? result.topics : [];
 
   if (rawTopics.length === 0) {
@@ -879,12 +985,27 @@ BẮT BUỘC:
   }));
 };
 
-const generateScriptsBatchFromAI = async (topics, bible, currentScripts) => {
+const generateScriptsBatchFromAI = async (topics, bible, currentScripts, targetDuration = '60-75s') => {
   const systemPrompt = `Bạn là Script Writer kiêm Content Editor cho kênh TikTok nhân hiệu Haichai.
 Nhiệm vụ của bạn là viết kịch bản chi tiết cho CÁC chủ đề được cung cấp. Bắt buộc bám Content Bible và thư viện cũ để tránh trùng lặp.
 
+Yêu cầu về ĐỘ DÀI VÀ SỐ CẢNH (RẤT QUAN TRỌNG):
+\${
+  targetDuration === '30-45s'
+    ? \`- Bạn ĐANG viết kịch bản thời lượng NGẮN (30–45 giây).
+- Số lượng cảnh (scenes) tối ưu: từ 3 đến 4 cảnh.
+- Tổng số từ phát âm (phần lời thoại/nội dung nói) cho cả kịch bản: khoảng 90 đến 120 từ. Mỗi cảnh chỉ nên có từ 1-2 câu ngắn gọn, súc tích.\`
+    : targetDuration === '90-120s'
+    ? \`- Bạn ĐANG viết kịch bản thời lượng DÀI (90–120 giây).
+- Số lượng cảnh (scenes) tối ưu: từ 7 đến 10 cảnh chi tiết.
+- Tổng số từ phát âm (phần lời thoại/nội dung nói) cho cả kịch bản: PHẢI từ 250 đến 350 từ để đảm bảo độ dài khi nói đạt 90-120 giây.
+- Mỗi cảnh (scenes) phải được viết cực kỳ chi tiết, nhiều lời thoại giải thích sâu sắc, phân tích rõ ràng, không viết qua loa hay quá ngắn gọn.\`
+    : \`- Bạn ĐANG viết kịch bản thời lượng TRUNG BÌNH (60–75 giây).
+- Số lượng cảnh (scenes) tối ưu: từ 5 đến 6 cảnh.
+- Tổng số từ phát âm (phần lời thoại/nội dung nói) cho cả kịch bản: khoảng 170 đến 220 từ. Các cảnh phân tích vừa đủ, chuyển cảnh tự nhiên.\`
+}
+
 Yêu cầu CHUNG cho mỗi kịch bản:
-- Viết kịch bản TikTok 60–75 giây.
 - Giọng thật, tỉnh, có trải nghiệm, không quảng cáo, không kêu gọi mua hàng, không cổ vũ uống rượu.
 - Mỗi video chỉ có một thông điệp chính.
 - Tạo 5 phương án hook, chọn 1 hook tốt nhất và giải thích.
@@ -916,15 +1037,28 @@ TUYỆT ĐỐI QUAN TRỌNG: Đầu vào có bao nhiêu chủ đề, bạn PHẢ
             hookOptions: { type: 'ARRAY', items: { type: 'STRING' } },
             selectedHook: { type: 'STRING' },
             selectedHookReason: { type: 'STRING' },
-            duration: { type: 'STRING' },
+            duration: { 
+              type: 'STRING',
+              description: `Thời lượng kịch bản. Điền chính xác "${targetDuration === '30-45s' ? '30–45s' : targetDuration === '90-120s' ? '90–120s' : '60–75s'}"`
+            },
             scenes: {
               type: 'ARRAY',
+              description: targetDuration === '30-45s' 
+                ? 'Mảng gồm 3-4 cảnh ngắn gọn. Tổng số từ của toàn bộ các cảnh cộng lại là khoảng 90-120 từ.'
+                : targetDuration === '90-120s'
+                ? 'Mảng gồm 7-10 cảnh chi tiết. Bắt buộc phải viết các đoạn thoại cực kỳ dài và phân tích sâu sắc cho mỗi cảnh. Tổng số từ của toàn bộ các cảnh cộng lại bắt buộc phải đạt từ 250 đến 350 từ để đủ thời lượng 90-120s.'
+                : 'Mảng gồm 5-6 cảnh. Tổng số từ của toàn bộ các cảnh cộng lại là khoảng 170-220 từ.',
               items: {
                 type: 'OBJECT',
                 properties: {
-                  name: { type: 'STRING' },
-                  content: { type: 'STRING' },
-                  visualSuggestion: { type: 'STRING' },
+                  name: { type: 'STRING', description: 'Tên cảnh (ví dụ: Cảnh 1, Cảnh 2...)' },
+                  content: { 
+                    type: 'STRING', 
+                    description: targetDuration === '90-120s'
+                      ? 'Nội dung nói / Lời thoại chi tiết của nhân vật trong cảnh này. Hãy viết dài, chi tiết, từ 3-4 câu phân tích rõ ràng và sâu sắc.'
+                      : 'Nội dung nói / Lời thoại của nhân vật trong cảnh này.'
+                  },
+                  visualSuggestion: { type: 'STRING', description: 'Gợi ý hình ảnh, hành động của nhân vật' },
                 },
               },
             },
@@ -980,7 +1114,10 @@ TUYỆT ĐỐI QUAN TRỌNG: Đầu vào có bao nhiêu chủ đề, bạn PHẢ
       selectedHook:
         rawScript.selectedHook || hookOptions[0] || originalTopic.suggestedHook || '',
       selectedHookReason: rawScript.selectedHookReason || '',
-      duration: rawScript.duration || '60–75s',
+      duration: rawScript.duration || (
+        targetDuration === '30-45s' ? '30–45s' :
+        targetDuration === '90-120s' ? '90–120s' : '60–75s'
+      ),
       scenes,
       ending: rawScript.ending || '',
       caption: rawScript.caption || '',
@@ -1000,6 +1137,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Đầu vào có bao nhiêu chủ đề, bạn PHẢ
 // --- MAIN APP COMPONENT ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('library');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [bible, setBible] = useState(DEFAULT_CONTENT_BIBLE);
   const [scripts, setScripts] = useState([]);
   const [viewingScript, setViewingScript] = useState(null);
@@ -1012,6 +1150,7 @@ export default function App() {
   const [generatedTopics, setGeneratedTopics] = useState([]);
   const [isGeneratingTopics, setIsGeneratingTopics] = useState(false);
   const [topicCount, setTopicCount] = useState(30);
+  const [topicFocusPrompt, setTopicFocusPrompt] = useState('');
   const [customTopicText, setCustomTopicText] = useState('');
   const [customTopicCategory, setCustomTopicCategory] = useState(CATEGORIES[0]);
   const [isGeneratingCustomScript, setIsGeneratingCustomScript] =
@@ -1020,7 +1159,9 @@ export default function App() {
   // Script Gen State
   const [isGeneratingScripts, setIsGeneratingScripts] = useState(false);
   const [draftScripts, setDraftScripts] = useState([]);
+  const [draftSortOrder, setDraftSortOrder] = useState('newest'); // 'newest' hoặc 'oldest'
   const [generationStatus, setGenerationStatus] = useState('');
+  const [scriptTargetDuration, setScriptTargetDuration] = useState('60-75s');
 
   // Manual Add State
   const [isAddingManual, setIsAddingManual] = useState(false);
@@ -1063,6 +1204,7 @@ export default function App() {
   const [aiProvider, setAiProvider] = useState(DEFAULT_AI_PROVIDER);
   const [aiApiKey, setAiApiKey] = useState('');
   const [aiModel, setAiModel] = useState(getDefaultAiModel(DEFAULT_AI_PROVIDER));
+  const [aiBaseUrl, setAiBaseUrl] = useState('');
   const [aiKeyStatus, setAiKeyStatus] = useState('');
   const [isTestingAiKey, setIsTestingAiKey] = useState(false);
 
@@ -1083,14 +1225,42 @@ export default function App() {
         return;
       }
 
+      localStorage.removeItem('haichai_offline_mode');
       setCurrentUser(result.user);
     } catch (error) {
       console.error('Firebase sign-in error:', error);
-      setAuthError(error.message || 'Không đăng nhập được bằng Google.');
+      let errMsg = error.message || 'Không đăng nhập được bằng Google.';
+      if (error.code === 'auth/unauthorized-domain' || String(error.message).includes('unauthorized-domain')) {
+        const currentDomain = window.location.hostname;
+        errMsg = (
+          <div>
+            <p className="font-semibold mb-1">Lỗi tên miền chưa được cấp quyền (unauthorized-domain):</p>
+            <p className="mb-2">Tên miền hiện tại <code className="bg-red-100 px-1 py-0.5 rounded text-xs font-mono">{currentDomain}</code> chưa được thêm vào danh sách Authorized Domains của dự án Firebase.</p>
+            <p className="mb-2 text-xs">Vui lòng mở Firebase Console, vào mục <strong>Authentication &gt; Settings &gt; Authorized domains</strong> và thêm tên miền trên để có thể đồng bộ.</p>
+            <p className="text-xs font-medium text-slate-800">Bạn có thể bấm nút "Sử dụng Ngoại tuyến (Offline Mode)" bên dưới để tiếp tục trải nghiệm toàn bộ tính năng kịch bản mà không cần đăng nhập!</p>
+          </div>
+        );
+      }
+      setAuthError(errMsg);
     }
   };
 
+  const handleSignInOffline = () => {
+    setAuthError('');
+    const offlineUser = {
+      email: 'offline-user@starspirits.vn',
+      displayName: 'Khách (Offline Mode)',
+      uid: 'offline_user',
+      isOffline: true,
+    };
+    localStorage.setItem('haichai_offline_mode', 'true');
+    setCurrentUser(offlineUser);
+    setSyncStatus('Chế độ ngoại tuyến (Không đồng bộ Cloud)');
+    setCloudReady(false);
+  };
+
   const handleSignOut = async () => {
+    localStorage.removeItem('haichai_offline_mode');
     await signOut(auth);
     setCurrentUser(null);
     setCloudReady(false);
@@ -1105,26 +1275,32 @@ export default function App() {
     const savedModel =
       localStorage.getItem(getAiModelStorageKey(safeProvider)) ||
       getDefaultAiModel(safeProvider);
+    const savedBaseUrl =
+      localStorage.getItem(getAiBaseUrlStorageKey(safeProvider)) || '';
 
     localStorage.setItem('haichai_ai_provider', safeProvider);
     setAiProvider(safeProvider);
     setAiApiKey(savedKey);
     setAiModel(savedModel);
+    setAiBaseUrl(savedBaseUrl);
     setAiKeyStatus('');
   };
 
   const handleSaveAiKey = () => {
     const key = normalizeApiKey(aiApiKey, aiProvider);
     const model = aiModel.trim() || getDefaultAiModel(aiProvider);
+    const baseUrl = aiBaseUrl.trim();
 
     localStorage.setItem('haichai_ai_provider', aiProvider);
     localStorage.setItem(getAiModelStorageKey(aiProvider), model);
+    localStorage.setItem(getAiBaseUrlStorageKey(aiProvider), baseUrl);
 
     if (!key) {
       localStorage.removeItem(getAiKeyStorageKey(aiProvider));
       if (aiProvider === 'gemini') localStorage.removeItem('gemini_api_key');
       setAiApiKey('');
       setAiModel(model);
+      setAiBaseUrl(baseUrl);
       setAiKeyStatus(`Đã xoá ${getAiProviderConfig(aiProvider).keyLabel} trên máy này.`);
       return;
     }
@@ -1133,12 +1309,14 @@ export default function App() {
     if (aiProvider === 'gemini') localStorage.setItem('gemini_api_key', key);
     setAiApiKey(key);
     setAiModel(model);
-    setAiKeyStatus(`Đã lưu ${getAiProviderConfig(aiProvider).keyLabel} và model ${model}.`);
+    setAiBaseUrl(baseUrl);
+    setAiKeyStatus(`Đã lưu ${getAiProviderConfig(aiProvider).keyLabel}, model ${model}${baseUrl ? ` và Custom API Base URL: ${baseUrl}` : ''}.`);
   };
 
   const handleTestAiKey = async () => {
     const key = normalizeApiKey(aiApiKey, aiProvider);
     const model = aiModel.trim() || getDefaultAiModel(aiProvider);
+    const baseUrl = aiBaseUrl.trim();
 
     if (!key) {
       setAiKeyStatus('Bạn chưa nhập key để test.');
@@ -1148,10 +1326,12 @@ export default function App() {
     localStorage.setItem('haichai_ai_provider', aiProvider);
     localStorage.setItem(getAiKeyStorageKey(aiProvider), key);
     localStorage.setItem(getAiModelStorageKey(aiProvider), model);
+    localStorage.setItem(getAiBaseUrlStorageKey(aiProvider), baseUrl);
     if (aiProvider === 'gemini') localStorage.setItem('gemini_api_key', key);
 
     setAiApiKey(key);
     setAiModel(model);
+    setAiBaseUrl(baseUrl);
     setIsTestingAiKey(true);
     setAiKeyStatus(`Đang test ${getAiProviderConfig(aiProvider).label} / ${model}...`);
 
@@ -1208,6 +1388,7 @@ export default function App() {
       setAiProvider(savedAIConfig.provider);
       setAiApiKey(savedAIConfig.apiKey);
       setAiModel(savedAIConfig.model);
+      setAiBaseUrl(savedAIConfig.baseUrl || '');
     } catch (error) {
       console.error('LocalStorage load error:', error);
       setScripts(INITIAL_SCRIPTS);
@@ -1216,34 +1397,40 @@ export default function App() {
     }
   }, []);
 
-  // Lắng nghe trạng thái đăng nhập Firebase.
+  // Lắng nghe trạng thái đăng nhập Firebase (TẠM THỜI TẮT LOGIN ĐỂ DEBUG).
+  // Lắng nghe trạng thái đăng nhập Firebase
   useEffect(() => {
+    setAuthLoading(true);
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const email = user.email || '';
+        if (isAllowedCompanyEmail(email)) {
+          setCurrentUser(user);
+          localStorage.removeItem('haichai_offline_mode');
+          setSyncStatus('Đã kết nối Firebase');
+        } else {
+          await signOut(auth);
+          setCurrentUser(null);
+          setAuthError(
+            `Email ${email || 'này'} không được phép. Chỉ cho phép @haichai.vn, @starspits.vn hoặc @starspirits.vn.`
+          );
+        }
+      } else {
+        const isOffline = localStorage.getItem('haichai_offline_mode') === 'true';
+        if (isOffline) {
+          setCurrentUser({
+            email: 'offline-user@starspirits.vn',
+            displayName: 'Khách (Offline Mode)',
+            uid: 'offline_user',
+            isOffline: true,
+          });
+          setSyncStatus('Chế độ ngoại tuyến (Không đồng bộ Cloud)');
+        } else {
+          setCurrentUser(null);
+          setSyncStatus('Chưa đăng nhập Firebase');
+        }
+      }
       setAuthLoading(false);
-
-      if (!user) {
-        setCurrentUser(null);
-        setCloudReady(false);
-        setSyncStatus('Chưa đăng nhập Firebase');
-        return;
-      }
-
-      const email = user.email || '';
-      if (!isAllowedCompanyEmail(email)) {
-        await signOut(auth);
-        setCurrentUser(null);
-        setCloudReady(false);
-        setAuthError(
-          `Email ${
-            email || 'này'
-          } không được phép. Chỉ cho phép @haichai.vn, @starspits.vn hoặc @starspirits.vn.`
-        );
-        setSyncStatus('Email không thuộc domain công ty');
-        return;
-      }
-
-      setAuthError('');
-      setCurrentUser(user);
     });
 
     return () => unsubscribe();
@@ -1269,7 +1456,7 @@ export default function App() {
 
   // Tải dữ liệu từ Firestore sau khi đăng nhập Google bằng email công ty.
   useEffect(() => {
-    if (!currentUser || !isLocalLoaded) return;
+    if (!currentUser || !isLocalLoaded || currentUser.isOffline) return;
 
     setSyncStatus('Đang kết nối Firestore...');
     setCloudReady(false);
@@ -1358,7 +1545,7 @@ export default function App() {
 
   // Tự động sync mọi thay đổi lên Firestore, có debounce để không ghi liên tục từng ký tự.
   useEffect(() => {
-    if (!currentUser || !cloudReady || syncingFromCloudRef.current) return;
+    if (!currentUser || !cloudReady || syncingFromCloudRef.current || currentUser.isOffline) return;
 
     setSyncStatus('Đang chờ đồng bộ...');
     const timeout = setTimeout(async () => {
@@ -1406,7 +1593,7 @@ export default function App() {
       draftScripts: safeDraftScripts,
     };
 
-    if (!currentUser || !cloudReady) return;
+    if (!currentUser || !cloudReady || currentUser.isOffline) return;
 
     try {
       const latestData = {
@@ -1493,7 +1680,7 @@ export default function App() {
 
     setIsGeneratingTopics(true);
     try {
-      const topics = await generateTopicsFromAI(bible, scripts, topicCount);
+      const topics = await generateTopicsFromAI(bible, scripts, topicCount, topicFocusPrompt);
       if (topics && topics.length > 0) {
         setGeneratedTopics(topics);
       } else {
@@ -1554,7 +1741,8 @@ export default function App() {
       const newScripts = await generateScriptsBatchFromAI(
         [customTopic],
         bible,
-        scripts
+        scripts,
+        scriptTargetDuration
       );
 
       if (newScripts && newScripts.length > 0) {
@@ -1629,7 +1817,8 @@ export default function App() {
           const newScripts = await generateScriptsBatchFromAI(
             chunk,
             bible,
-            scripts
+            scripts,
+            scriptTargetDuration
           );
 
           if (newScripts && newScripts.length > 0) {
@@ -1859,8 +2048,8 @@ export default function App() {
   };
 
   const renderSidebar = () => (
-    <div className="w-64 text-white flex flex-col h-screen fixed top-0 left-0 bg-[#0d2440]">
-      <div className="p-6 flex items-center">
+    <div className={`w-64 text-white flex flex-col h-screen fixed top-0 left-0 bg-[#0d2440] z-50 transition-transform duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <div className="p-6 flex items-center justify-between">
         {/* Placeholder if image fails to load */}
         <img
           src="https://tascusfood.com/haichailogo.png"
@@ -1870,8 +2059,15 @@ export default function App() {
               'https://placehold.co/150x50/0d2440/FFF?text=HAICHAI+STUDIO';
           }}
           alt="Haichai Script Studio"
-          className="h-18 w-auto object-contain"
+          className="h-14 md:h-18 w-auto object-contain"
         />
+        <button
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="md:hidden text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition"
+          aria-label="Close menu"
+        >
+          <IconClose />
+        </button>
       </div>
       <nav className="flex-1 px-4 space-y-2 mt-4">
         {[
@@ -1895,7 +2091,10 @@ export default function App() {
         ].map((item) => (
           <button
             key={item.id}
-            onClick={() => setActiveTab(item.id)}
+            onClick={() => {
+              setActiveTab(item.id);
+              setIsMobileMenuOpen(false);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
               activeTab === item.id
                 ? 'bg-[#819396] text-white shadow-md'
@@ -1927,13 +2126,14 @@ export default function App() {
     });
 
     return (
-      <div className="animate-fade-in">
-        <div className="flex justify-between items-center mb-6">
+      <>
+        <div className="animate-fade-in">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <h2 className="text-2xl font-bold text-slate-800">
             Thư viện Kịch bản ({scripts.length})
           </h2>
           <button
-            className="bg-[#0d71ba] hover:opacity-90 text-white px-4 py-2 rounded shadow-sm text-sm font-medium transition flex items-center gap-2"
+            className="w-full sm:w-auto bg-[#0d71ba] hover:opacity-90 text-white px-4 py-2.5 rounded-lg shadow-sm text-sm font-semibold transition flex items-center justify-center gap-2"
             onClick={() => {
               setManualScript(EMPTY_MANUAL_SCRIPT);
               setIsAddingManual(true);
@@ -1943,7 +2143,7 @@ export default function App() {
           </button>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex gap-4">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col sm:flex-row gap-4">
           <div className="flex-1 relative">
             <div className="absolute inset-y-0 left-3 flex items-center text-slate-400">
               <IconSearch />
@@ -1951,13 +2151,13 @@ export default function App() {
             <input
               type="text"
               placeholder="Tìm tên kịch bản, chủ đề..."
-              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           <select
-            className="border border-slate-300 rounded-lg px-4 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="border border-slate-300 rounded-lg px-4 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-slate-700"
             value={filterCat}
             onChange={(e) => setFilterCat(e.target.value)}
           >
@@ -1970,7 +2170,8 @@ export default function App() {
           </select>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* Desktop Version */}
+        <div className="hidden md:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
               <tr>
@@ -2029,20 +2230,20 @@ export default function App() {
                     <td className="px-6 py-4 text-right">
                       <button
                         onClick={() => setViewingScript(script)}
-                        className="text-[#0d71ba] hover:opacity-70 font-medium text-sm mr-3 transition"
+                        className="text-[#0d71ba] hover:opacity-70 font-semibold text-sm mr-4 transition cursor-pointer"
                       >
                         Xem
                       </button>
                       <button
                         onClick={() => handleExportPDF(script)}
-                        className="text-[#0d71ba] hover:opacity-70 font-medium text-sm mr-3 transition"
+                        className="text-[#0d71ba] hover:opacity-70 font-semibold text-sm mr-4 transition cursor-pointer"
                         title="In/Xuất PDF"
                       >
                         In/PDF
                       </button>
                       <button
                         onClick={() => handleDeleteScript(script.id)}
-                        className="text-[#0d71ba] hover:opacity-70 font-medium text-sm transition"
+                        className="text-red-600 hover:text-red-800 font-semibold text-sm transition cursor-pointer"
                       >
                         Xóa
                       </button>
@@ -2054,119 +2255,78 @@ export default function App() {
           </table>
         </div>
 
-        {/* Modal Xem Kịch Bản */}
-        {viewingScript && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 z-[60]">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
-              <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                <h3 className="text-lg font-bold text-slate-800">
-                  {viewingScript.title}
-                </h3>
-                <div className="flex gap-4 items-center">
-                  <button
-                    onClick={() => handleExportPDF(viewingScript)}
-                    className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-800 px-4 py-2 rounded-lg text-sm font-medium transition"
-                  >
-                    <IconPrinter /> In kịch bản
-                  </button>
-                  <button
-                    onClick={() => setViewingScript(null)}
-                    className="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none"
-                  >
-                    &times;
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 gap-8 text-sm">
-                <div className="lg:col-span-2 space-y-6">
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                      Thông điệp chính
-                    </h4>
-                    <p className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-lg italic">
-                      {viewingScript.mainMessage}
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                      Hook Được Chọn
-                    </h4>
-                    <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
-                      <p className="text-lg font-medium text-indigo-900">
-                        "{viewingScript.selectedHook}"
-                      </p>
-                      <p className="text-indigo-600 mt-2 text-xs">
-                        Lý do: {viewingScript.selectedHookReason}
-                      </p>
-                    </div>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                      Các Cảnh Quay
-                    </h4>
-                    <div className="space-y-4">
-                      {viewingScript.scenes?.map((scene, i) => (
-                        <div
-                          key={i}
-                          className="border-l-2 border-indigo-200 pl-4 py-1"
-                        >
-                          <p className="font-bold text-slate-700">
-                            {scene.name}
-                          </p>
-                          <p className="text-slate-800 mt-1 whitespace-pre-line">
-                            {scene.content}
-                          </p>
-                          <p className="text-slate-500 text-xs mt-1">
-                            🎥 {scene.visualSuggestion}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                      Câu Kết
-                    </h4>
-                    <p className="text-slate-800 font-medium">
-                      "{viewingScript.ending}"
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-6 bg-slate-50 p-4 rounded-lg border border-slate-100 h-fit">
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
-                      Text on Screen
-                    </h4>
-                    <p className="text-slate-700 bg-white p-2 rounded border border-slate-200">
-                      {viewingScript.textOnScreen}
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
-                      Caption
-                    </h4>
-                    <p className="text-slate-700 bg-white p-2 rounded border border-slate-200 whitespace-pre-line">
-                      {viewingScript.caption}
-                    </p>
-                  </div>
-                  {viewingScript.notes && (
-                    <div>
-                      <h4 className="font-bold text-red-800 mb-1 uppercase text-xs">
-                        Checklist An Toàn
-                      </h4>
-                      <p className="text-red-700 bg-red-50 p-2 rounded border border-red-200">
-                        {viewingScript.notes}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
+        {/* Mobile Version */}
+        <div className="block md:hidden space-y-4">
+          {filteredScripts.length === 0 ? (
+            <div className="bg-white p-8 text-center rounded-xl border border-slate-200 text-slate-500">
+              Chưa có kịch bản nào.
             </div>
-          </div>
-        )}
+          ) : (
+            filteredScripts.map((script) => (
+              <div
+                key={script.id}
+                className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3"
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <h4 className="font-bold text-slate-800 text-sm leading-snug">
+                    {script.title}
+                  </h4>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 uppercase ${
+                      script.status === 'approved'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {script.status}
+                  </span>
+                </div>
 
-        {/* Modal Thêm Kịch Bản Thủ Công */}
-        {isAddingManual && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-medium">
+                    {script.category}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                      script.duplicateRiskScore > 70
+                        ? 'bg-red-100 text-red-700'
+                        : script.duplicateRiskScore > 40
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}
+                  >
+                    Risk: {script.duplicateRiskScore}
+                  </span>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-100 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setViewingScript(script)}
+                    className="text-center bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[#0d71ba] py-2 rounded-lg font-bold text-xs transition"
+                  >
+                    Xem
+                  </button>
+                  <button
+                    onClick={() => handleExportPDF(script)}
+                    className="text-center bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[#0d71ba] py-2 rounded-lg font-bold text-xs transition"
+                  >
+                    In/PDF
+                  </button>
+                  <button
+                    onClick={() => handleDeleteScript(script.id)}
+                    className="text-center bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 py-2 rounded-lg font-bold text-xs transition"
+                  >
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+      
+      {/* Modal Thêm Kịch Bản Thủ Công */}
+      {isAddingManual && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 z-[60]">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
               <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
@@ -2446,7 +2606,7 @@ export default function App() {
             </div>
           </div>
         )}
-      </div>
+      </>
     );
   };
 
@@ -2457,8 +2617,8 @@ export default function App() {
       </h2>
 
       {/* Generate Section */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex justify-between items-center mb-4">
+      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-4 border-b border-slate-100">
           <div>
             <h3 className="text-lg font-semibold mb-1">
               Tạo chủ đề mới
@@ -2470,16 +2630,33 @@ export default function App() {
               Tỉ lệ hiện tại: {getTopicDistributionSummary(topicCount)}
             </p>
           </div>
-          <div className="flex items-end gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">
-                Số lượng chủ đề
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              Định hướng / Từ khóa tập trung (Tùy chọn)
+            </label>
+            <input
+              type="text"
+              value={topicFocusPrompt}
+              onChange={(e) => setTopicFocusPrompt(e.target.value)}
+              disabled={isGeneratingTopics}
+              placeholder="Ví dụ: tuyển dụng nhân sự, xử lý phốt, câu chuyện nhượng quyền, tâm lý khách hàng..."
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            />
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 w-full">
+            <div className="flex-1">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Số lượng
               </label>
               <select
                 value={topicCount}
                 onChange={(e) => setTopicCount(Number(e.target.value))}
                 disabled={isGeneratingTopics}
-                className="border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               >
                 {TOPIC_COUNT_OPTIONS.map((count) => (
                   <option key={count} value={count}>
@@ -2491,16 +2668,16 @@ export default function App() {
             <button
               onClick={handleGenerateTopics}
               disabled={isGeneratingTopics}
-              className="px-5 py-2 rounded-lg font-medium transition shadow-sm flex items-center gap-2 bg-[#0d71ba] hover:opacity-90 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-5 py-2.5 rounded-lg font-bold transition shadow-sm flex items-center justify-center gap-2 bg-[#0d71ba] hover:opacity-90 text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap h-[42px]"
             >
-              {isGeneratingTopics ? 'Đang tạo...' : `Tạo ${topicCount} Chủ Đề`}
+              {isGeneratingTopics ? 'Đang tạo...' : `Tạo chủ đề`}
             </button>
           </div>
         </div>
       </div>
 
       {/* Custom Real-life Topic Section */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-8">
+      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200 mt-8">
         <div className="flex justify-between items-start gap-6 mb-4">
           <div>
             <h3 className="text-lg font-semibold mb-1">
@@ -2512,7 +2689,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
           <div className="lg:col-span-1">
             <label className="block text-xs font-medium text-slate-500 mb-1">
               Nhóm nội dung
@@ -2521,13 +2698,29 @@ export default function App() {
               value={customTopicCategory}
               onChange={(e) => setCustomTopicCategory(e.target.value)}
               disabled={isGeneratingCustomScript}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             >
               {CATEGORIES.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className="lg:col-span-1">
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Độ dài kịch bản
+            </label>
+            <select
+              value={scriptTargetDuration}
+              onChange={(e) => setScriptTargetDuration(e.target.value)}
+              disabled={isGeneratingCustomScript}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              <option value="30-45s">Ngắn (30–45s)</option>
+              <option value="60-75s">Trung bình (60–75s)</option>
+              <option value="90-120s">Dài (90–120s)</option>
             </select>
           </div>
 
@@ -2539,16 +2732,16 @@ export default function App() {
               value={customTopicText}
               onChange={(e) => setCustomTopicText(e.target.value)}
               disabled={isGeneratingCustomScript}
-              rows={3}
-              placeholder="Ví dụ: Hôm nay đi khảo sát mặt bằng VinWestPoint, phát hiện khách hỏi nhiều về giấy tờ nguồn gốc hơn là giá..."
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 resize-none"
+              rows={2}
+              placeholder="Ví dụ: Hôm nay đi khảo sát mặt bằng VinWestPoint, phát hiện khách hỏi nhiều về giấy tờ..."
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 resize-none bg-slate-50"
             />
           </div>
 
           <button
             onClick={handleGenerateCustomTopicScript}
             disabled={isGeneratingCustomScript || !customTopicText.trim()}
-            className={`px-5 py-2 rounded-lg font-medium transition shadow-sm ${
+            className={`w-full lg:col-span-1 px-5 py-2.5 rounded-lg font-bold text-sm h-[42px] transition shadow-sm ${
               isGeneratingCustomScript || !customTopicText.trim()
                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                 : 'bg-[#0d71ba] hover:opacity-90 text-white'
@@ -2561,238 +2754,302 @@ export default function App() {
 
       {generatedTopics.length > 0 && (
         <div className="mt-8 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-            <div className="bg-indigo-50 p-3 border-b border-slate-200 flex justify-between items-center text-sm">
-              <span className="font-medium text-indigo-800">
-                Đã chọn: {generatedTopics.filter((t) => t.selected).length} chủ
-                đề
-              </span>
+          <div className="bg-indigo-50 p-3.5 border-b border-slate-200 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center text-sm">
+            <span className="font-bold text-indigo-800 text-center sm:text-left">
+              Đã chọn: {generatedTopics.filter((t) => t.selected).length} chủ đề
+            </span>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex items-center justify-between sm:justify-start gap-2 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                <span className="text-slate-600 font-bold text-xs uppercase tracking-wider">Độ dài:</span>
+                <select
+                  value={scriptTargetDuration}
+                  onChange={(e) => setScriptTargetDuration(e.target.value)}
+                  disabled={isGeneratingScripts}
+                  className="bg-transparent border-none text-xs font-semibold focus:ring-0 focus:outline-none text-slate-700 cursor-pointer"
+                >
+                  <option value="30-45s">Ngắn (30–45s)</option>
+                  <option value="60-75s">Trung bình (60–75s)</option>
+                  <option value="90-120s">Dài (90–120s)</option>
+                </select>
+              </div>
               <button
                 onClick={handleGenerateDetailedScripts}
-                className="bg-[#0d71ba] text-white px-4 py-1.5 rounded hover:opacity-90 font-medium shadow-sm transition"
+                disabled={isGeneratingScripts}
+                className="bg-[#0d71ba] text-white px-4 py-2.5 rounded-lg hover:opacity-90 font-bold text-sm shadow-sm transition disabled:opacity-50"
               >
                 Tạo kịch bản cho chủ đề đã chọn →
               </button>
             </div>
-            <div className="max-h-[600px] overflow-y-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-600 sticky top-0 shadow-sm z-10">
-                  <tr>
-                    <th className="px-4 py-3 w-12 text-center">Chọn</th>
-                    <th className="px-4 py-3">Nhóm nội dung</th>
-                    <th className="px-4 py-3">Chủ đề & Góc nhìn</th>
-                    <th className="px-4 py-3 w-24">Risk Score</th>
+          </div>
+
+          {/* Desktop Version */}
+          <div className="hidden md:block max-h-[600px] overflow-y-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-slate-600 sticky top-0 shadow-sm z-10">
+                <tr>
+                  <th className="px-4 py-3 w-12 text-center">Chọn</th>
+                  <th className="px-4 py-3">Nhóm nội dung</th>
+                  <th className="px-4 py-3">Chủ đề & Góc nhìn</th>
+                  <th className="px-4 py-3 w-24">Risk Score</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {generatedTopics.map((topic) => (
+                  <tr
+                    key={topic.id}
+                    className={`hover:bg-indigo-50/70 cursor-pointer transition-colors ${
+                      topic.selected ? 'bg-indigo-50/50' : ''
+                    }`}
+                    onClick={() => toggleTopicSelection(topic.id)}
+                  >
+                    <td className="px-4 py-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(topic.selected)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggleTopicSelection(topic.id);
+                        }}
+                        className="w-4 h-4 text-[#0d71ba] rounded border-slate-300 focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="inline-block bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium">
+                        {topic.category}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-900 text-sm">
+                        {topic.topicName}
+                      </p>
+                      <p className="text-slate-500 mt-1 line-clamp-2 text-xs leading-relaxed">
+                        {topic.angle}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-semibold ${
+                          topic.duplicateRiskScore > 70
+                            ? 'bg-red-100 text-red-700'
+                            : topic.duplicateRiskScore > 40
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-green-100 text-green-700'
+                        }`}
+                      >
+                        {topic.duplicateRiskScore}
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {generatedTopics.map((topic) => (
-                    <tr
-                      key={topic.id}
-                      className={`hover:bg-indigo-50/70 cursor-pointer transition-colors ${
-                        topic.selected ? 'bg-indigo-50/50' : ''
-                      }`}
-                      onClick={() => toggleTopicSelection(topic.id)}
-                    >
-                      <td className="px-4 py-4 text-center">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(topic.selected)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            toggleTopicSelection(topic.id);
-                          }}
-                          className="w-4 h-4 text-[#0d71ba] rounded border-slate-300 focus:ring-indigo-500"
-                        />
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="inline-block bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium">
-                          {topic.category}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="font-medium text-slate-900">
-                          {topic.topicName}
-                        </p>
-                        <p className="text-slate-500 mt-1 line-clamp-2">
-                          {topic.angle}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            topic.duplicateRiskScore > 70
-                              ? 'bg-red-100 text-red-700'
-                              : topic.duplicateRiskScore > 40
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-green-100 text-green-700'
-                          }`}
-                        >
-                          {topic.duplicateRiskScore}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-        </div>
-      )}
-    </div>
-  );
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-  const renderScriptGenerator = () => (
-    <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold text-slate-800 mb-6">
-        Kịch bản Draft chưa lưu
-      </h2>
-
-      {draftScripts.length === 0 && !isGeneratingScripts ? (
-        <div className="bg-white p-12 text-center rounded-xl shadow-sm border border-slate-200 text-slate-500">
-          Không có kịch bản Draft nào. Hãy sang tab "Tạo chủ đề" để chọn và tạo.
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {[...draftScripts]
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            .map((script, idx) => (
+          {/* Mobile Version */}
+          <div className="block md:hidden max-h-[500px] overflow-y-auto p-3 space-y-3 bg-slate-50">
+            {generatedTopics.map((topic) => (
               <div
-                key={script.id}
-                className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"
+                key={topic.id}
+                onClick={() => toggleTopicSelection(topic.id)}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex gap-3 ${
+                  topic.selected
+                    ? 'bg-indigo-50/90 border-indigo-300 shadow-sm'
+                    : 'bg-white border-slate-200'
+                }`}
               >
-                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800">
-                      #{idx + 1} - {script.title}
-                    </h3>
-                    <div className="flex gap-2 mt-2 text-xs">
-                      <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-medium">
-                        {script.category}
-                      </span>
-                      <span className="bg-slate-200 text-slate-700 px-2 py-1 rounded">
-                        Risk: {script.duplicateRiskScore}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => handleSaveDraftToLibrary(script.id)}
-                      className="bg-[#0d71ba] hover:opacity-90 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition shadow-sm"
-                    >
-                      <IconCheck /> Lưu vào Thư viện
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDraft(script.id)}
-                      className="bg-[#0d71ba] hover:opacity-90 text-white px-3 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition shadow-sm"
-                      title="Xóa nháp này"
-                    >
-                      <IconTrash /> Xóa
-                    </button>
-                  </div>
+                <div className="pt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(topic.selected)}
+                    readOnly
+                    className="w-5 h-5 text-[#0d71ba] rounded border-slate-300 focus:ring-indigo-500 pointer-events-none"
+                  />
                 </div>
-                <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 space-y-6 text-sm">
-                    <div>
-                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                        Thông điệp chính
-                      </h4>
-                      <p className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-lg italic">
-                        {script.mainMessage}
-                      </p>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                        Hook Được Chọn
-                      </h4>
-                      <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
-                        <p className="text-lg font-medium text-indigo-900">
-                          "{script.selectedHook}"
-                        </p>
-                        <p className="text-indigo-600 mt-2 text-xs">
-                          Lý do AI chọn: {script.selectedHookReason}
-                        </p>
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                        Các Cảnh Quay
-                      </h4>
-                      <div className="space-y-4">
-                        {script.scenes?.map((scene, i) => (
-                          <div
-                            key={i}
-                            className="border-l-2 border-indigo-200 pl-4 py-1"
-                          >
-                            <p className="font-bold text-slate-700">
-                              {scene.name}
-                            </p>
-                            <p className="text-slate-800 mt-1 whitespace-pre-line">
-                              {scene.content}
-                            </p>
-                            <p className="text-slate-500 text-xs mt-1">
-                              🎥 {scene.visualSuggestion}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
-                        Câu Kết
-                      </h4>
-                      <p className="text-slate-800 font-medium">
-                        "{script.ending}"
-                      </p>
-                    </div>
+                <div className="flex-1 space-y-2">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+                      {topic.category}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        topic.duplicateRiskScore > 70
+                          ? 'bg-red-100 text-red-700'
+                          : topic.duplicateRiskScore > 40
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-green-100 text-green-700'
+                      }`}
+                    >
+                      Risk: {topic.duplicateRiskScore}
+                    </span>
                   </div>
-
-                  {/* Cột phải */}
-                  <div className="space-y-6 text-sm bg-slate-50 p-4 rounded-lg border border-slate-100 h-fit">
-                    <div>
-                      <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
-                        Text on Screen
-                      </h4>
-                      <p className="text-slate-700 bg-white p-2 rounded border border-slate-200">
-                        {script.textOnScreen}
-                      </p>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
-                        Caption
-                      </h4>
-                      <p className="text-slate-700 bg-white p-2 rounded border border-slate-200 whitespace-pre-line">
-                        {script.caption}
-                      </p>
-                    </div>
-                    {script.notes && (
-                      <div>
-                        <h4 className="font-bold text-red-800 mb-1 uppercase text-xs">
-                          Checklist An Toàn
-                        </h4>
-                        <p className="text-red-700 bg-red-50 p-2 rounded border border-red-200">
-                          {script.notes}
-                        </p>
-                      </div>
-                    )}
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                      {topic.topicName}
+                    </h4>
+                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                      {topic.angle}
+                    </p>
                   </div>
                 </div>
               </div>
             ))}
-
-          {isGeneratingScripts && (
-            <div className="flex flex-col items-center justify-center py-12 bg-white rounded-xl shadow-sm border border-slate-200 border-dashed">
-              <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-              <p className="text-slate-600 font-medium">
-                AI đang xử lý kịch bản dựa trên Content Bible...
-              </p>
-              <p className="text-sm text-indigo-600 font-medium mt-2 bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100">
-                {generationStatus}
-              </p>
-            </div>
-          )}
+          </div>
         </div>
       )}
     </div>
   );
+
+  const formatVietnameseDate = (isoString) => {
+    if (!isoString) return 'Chưa rõ';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return 'Chưa rõ';
+      
+      const timeStr = date.toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const dateStr = date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+      return `${timeStr} ngày ${dateStr}`;
+    } catch (e) {
+      return 'Chưa rõ';
+    }
+  };
+
+  const renderScriptGenerator = () => {
+    // Sắp xếp thứ tự đánh số kịch bản cố định theo trình tự thời gian tạo tăng dần (cũ nhất -> mới nhất)
+    const chronologicalDrafts = [...draftScripts].sort(
+      (a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+    );
+
+    // Sắp xếp danh sách hiển thị theo lựa chọn của người dùng
+    const sortedDrafts = [...draftScripts].sort((a, b) => {
+      const dateA = new Date(a.createdAt || 0);
+      const dateB = new Date(b.createdAt || 0);
+      return draftSortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+    });
+
+    return (
+      <div className="animate-fade-in">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">
+              Kịch bản Draft chưa lưu
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">
+              Danh sách kịch bản nháp do AI tạo hoặc nhập vào, sẵn sàng phê duyệt lưu vào Thư viện.
+            </p>
+          </div>
+
+          {draftScripts.length > 0 && (
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 border border-slate-200 rounded-xl shadow-sm">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <span>📅</span> Sắp xếp:
+              </span>
+              <select
+                value={draftSortOrder}
+                onChange={(e) => setDraftSortOrder(e.target.value)}
+                className="bg-transparent border-none text-sm font-semibold text-slate-700 focus:ring-0 focus:outline-none cursor-pointer"
+              >
+                <option value="newest">Mới nhất trước</option>
+                <option value="oldest">Cũ nhất trước</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        {draftScripts.length === 0 && !isGeneratingScripts ? (
+          <div className="bg-white p-12 text-center rounded-xl shadow-sm border border-slate-200 text-slate-500">
+            Không có kịch bản Draft nào. Hãy sang tab "Tạo chủ đề" để chọn và tạo.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {draftScripts.length > 0 && (
+              <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-xs text-blue-800 flex items-center gap-2 mb-2">
+                <span className="text-sm">💡</span>
+                <span>Bấm trực tiếp vào dòng kịch bản nháp để mở popup xem chi tiết đầy đủ phân cảnh và tải/in PDF.</span>
+              </div>
+            )}
+            {sortedDrafts.map((script) => {
+              // Tìm số thứ tự kịch bản theo thứ tự thời gian tạo thực tế (đảm bảo số thứ tự cố định bất kể lọc sắp xếp hiển thị)
+              const draftNum = chronologicalDrafts.findIndex((d) => d.id === script.id) + 1;
+              return (
+                <div
+                  key={script.id}
+                  onClick={() => setViewingScript(script)}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-[#0d71ba]/60 hover:bg-slate-50/50 cursor-pointer transition-all animate-fade-in"
+                  title="Click để xem chi tiết kịch bản"
+                >
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base font-bold text-slate-800 leading-snug">
+                      #{draftNum} - {script.title}
+                    </h3>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-[10px] font-bold">
+                        {script.category}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          script.duplicateRiskScore > 70
+                            ? 'bg-red-50 text-red-700 border-red-100'
+                            : script.duplicateRiskScore > 40
+                            ? 'bg-amber-50 text-amber-700 border-amber-100'
+                            : 'bg-slate-50 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        Risk: {script.duplicateRiskScore}
+                      </span>
+                      <span className="bg-slate-50 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1">
+                        <span>🕒</span> {formatVietnameseDate(script.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 w-full mt-3 md:mt-0 md:flex md:w-auto md:items-center md:gap-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSaveDraftToLibrary(script.id);
+                      }}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition shadow-sm h-[42px] cursor-pointer"
+                    >
+                      <IconCheck /> Duyệt Lưu
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteDraft(script.id);
+                      }}
+                      className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-3 py-2 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition shadow-sm h-[42px] cursor-pointer"
+                      title="Xóa nháp này"
+                    >
+                      <IconTrash /> Xóa nháp
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {isGeneratingScripts && (
+              <div className="flex flex-col items-center justify-center py-12 bg-white rounded-xl shadow-sm border border-slate-200 border-dashed">
+                <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+                <p className="text-slate-600 font-medium">
+                  AI đang xử lý kịch bản dựa trên Content Bible...
+                </p>
+                <p className="text-sm text-indigo-600 font-medium mt-2 bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100">
+                  {generationStatus}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderBible = () => (
     <div className="animate-fade-in flex flex-col h-[calc(100vh-6rem)]">
@@ -2813,6 +3070,10 @@ export default function App() {
   );
 
   const renderSettings = () => {
+    const providerConfig = getAiProviderConfig(aiProvider);
+    const providerModels = providerConfig ? providerConfig.models : [];
+    const isCustomModel = !providerModels.includes(aiModel);
+
     const handleExport = () => {
       const backup = {
         bible,
@@ -2923,25 +3184,49 @@ export default function App() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Chọn / nhập model
+                Chọn model
+              </label>
+              <select
+                value={isCustomModel ? 'custom' : aiModel}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === 'custom') {
+                    setAiModel('');
+                  } else {
+                    setAiModel(val);
+                  }
+                  setAiKeyStatus('');
+                }}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm font-medium text-slate-800"
+              >
+                {providerModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+                <option value="custom">-- Nhập model tùy chỉnh --</option>
+              </select>
+            </div>
+          </div>
+
+          {isCustomModel && (
+            <div className="mb-4 animate-fade-in">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Nhập model tùy chỉnh
               </label>
               <input
-                list="ai-model-suggestions"
+                type="text"
+                autoComplete="off"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm"
-                placeholder={getDefaultAiModel(aiProvider)}
+                placeholder="Nhập chính xác mã model (ví dụ: grok-3-mini-fast...)"
                 value={aiModel}
                 onChange={(e) => {
                   setAiModel(e.target.value);
                   setAiKeyStatus('');
                 }}
               />
-              <datalist id="ai-model-suggestions">
-                {getAiProviderConfig(aiProvider).models.map((model) => (
-                  <option key={model} value={model} />
-                ))}
-              </datalist>
             </div>
-          </div>
+          )}
 
           <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
             {getAiProviderConfig(aiProvider).keyLabel}
@@ -2956,6 +3241,25 @@ export default function App() {
               setAiKeyStatus('');
             }}
           />
+
+          <div className="mt-4 mb-4">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              Custom API Base URL (Tùy chọn bên thứ ba / proxy)
+            </label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm"
+              placeholder="Ví dụ: https://llmgate.app/v1 (Để trống nếu dùng mặc định)"
+              value={aiBaseUrl}
+              onChange={(e) => {
+                setAiBaseUrl(e.target.value);
+                setAiKeyStatus('');
+              }}
+            />
+            <p className="text-slate-400 text-xs mt-1">
+              Điền URL này nếu bạn dùng proxy trung gian (như LLMGate, One-API) tương thích OpenAI/Grok.
+            </p>
+          </div>
 
           <div className="flex flex-wrap gap-3 mt-4">
             <button
@@ -2974,9 +3278,11 @@ export default function App() {
             <button
               onClick={() => {
                 setAiApiKey('');
+                setAiBaseUrl('');
                 localStorage.removeItem(getAiKeyStorageKey(aiProvider));
+                localStorage.removeItem(getAiBaseUrlStorageKey(aiProvider));
                 if (aiProvider === 'gemini') localStorage.removeItem('gemini_api_key');
-                setAiKeyStatus(`Đã xoá ${getAiProviderConfig(aiProvider).keyLabel} trên máy này.`);
+                setAiKeyStatus(`Đã xoá ${getAiProviderConfig(aiProvider).keyLabel} và Custom Base URL trên máy này.`);
               }}
               className="bg-white border border-red-200 text-red-700 hover:bg-red-50 px-4 py-2 rounded-lg font-medium text-sm"
             >
@@ -3055,9 +3361,16 @@ export default function App() {
 
         <button
           onClick={handleSignInWithGoogle}
-          className="w-full bg-[#0d71ba] hover:opacity-90 text-white px-5 py-3 rounded-lg font-semibold transition shadow-sm"
+          className="w-full bg-[#0d71ba] hover:opacity-90 text-white px-5 py-3 rounded-lg font-semibold transition shadow-sm mb-3"
         >
           Đăng nhập bằng Google công ty
+        </button>
+
+        <button
+          onClick={handleSignInOffline}
+          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-3 rounded-lg font-semibold transition border border-slate-300"
+        >
+          Sử dụng Ngoại tuyến (Offline Mode)
         </button>
       </div>
       {renderModal()}
@@ -3078,9 +3391,39 @@ export default function App() {
 
   // --- MAIN RENDER ---
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col md:flex-row">
+      {/* Mobile Top Header */}
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-[#0d2440] text-white fixed top-0 left-0 right-0 z-40 shadow-md h-16">
+        <button
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="p-2 hover:bg-slate-800 rounded-lg transition"
+          aria-label="Open menu"
+        >
+          <IconMenu />
+        </button>
+        <img
+          src="https://tascusfood.com/haichailogo.png"
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src =
+              'https://placehold.co/150x50/0d2440/FFF?text=HAICHAI+STUDIO';
+          }}
+          alt="Haichai Script Studio"
+          className="h-9 w-auto object-contain"
+        />
+        <div className="w-10"></div> {/* Cân đối cho nút burger bên trái */}
+      </header>
+
+      {/* Backdrop cho Mobile Sidebar */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-45 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {renderSidebar()}
-      <main className="ml-64 flex-1 p-8 h-screen overflow-y-auto">
+      <main className="flex-1 p-4 md:p-8 pt-20 md:pt-8 md:ml-64 h-screen overflow-y-auto">
         {activeTab === 'library' && renderLibrary()}
         {activeTab === 'generate-topics' && renderTopicGenerator()}
         {activeTab === 'generate-scripts' && renderScriptGenerator()}
@@ -3090,6 +3433,117 @@ export default function App() {
 
       {/* Global UI Components  */}
       {renderModal()}
+
+      {/* Modal Xem Kịch Bản Toàn Cục */}
+      {viewingScript && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 md:p-8 z-[60]">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-4 sm:px-6 py-3 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+              <h3 className="text-base sm:text-lg font-bold text-slate-800 truncate mr-3">
+                {viewingScript.title}
+              </h3>
+              <div className="flex gap-2 sm:gap-4 items-center shrink-0">
+                <button
+                  onClick={() => handleExportPDF(viewingScript)}
+                  className="flex items-center gap-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer shadow-sm"
+                >
+                  <IconPrinter /> <span className="hidden sm:inline">In kịch bản</span>
+                </button>
+                <button
+                  onClick={() => setViewingScript(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none px-2 py-1 cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+            <div className="p-4 sm:p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 text-sm">
+              <div className="lg:col-span-2 space-y-6">
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                    Thông điệp chính
+                  </h4>
+                  <p className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-lg italic">
+                    {viewingScript.mainMessage}
+                  </p>
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                    Hook Được Chọn
+                  </h4>
+                  <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
+                    <p className="text-lg font-medium text-indigo-900">
+                      "{viewingScript.selectedHook}"
+                    </p>
+                    <p className="text-indigo-600 mt-2 text-xs">
+                      Lý do: {viewingScript.selectedHookReason}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                    Các Cảnh Quay
+                  </h4>
+                  <div className="space-y-4">
+                    {viewingScript.scenes?.map((scene, i) => (
+                      <div
+                        key={i}
+                        className="border-l-2 border-indigo-200 pl-4 py-1"
+                      >
+                        <p className="font-bold text-slate-700">
+                          {scene.name}
+                        </p>
+                        <p className="text-slate-800 mt-1 whitespace-pre-line">
+                          {scene.content}
+                        </p>
+                        <p className="text-slate-500 text-xs mt-1">
+                          🎥 {scene.visualSuggestion}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-2 uppercase text-xs tracking-wider">
+                    Câu Kết
+                  </h4>
+                  <p className="text-slate-800 font-medium">
+                    "{viewingScript.ending}"
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-6 bg-slate-50 p-4 rounded-lg border border-slate-100 h-fit">
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
+                    Text on Screen
+                  </h4>
+                  <p className="text-slate-700 bg-white p-2 rounded border border-slate-200">
+                    {viewingScript.textOnScreen}
+                  </p>
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-1 uppercase text-xs">
+                    Caption
+                  </h4>
+                  <p className="text-slate-700 bg-white p-2 rounded border border-slate-200 whitespace-pre-line">
+                    {viewingScript.caption}
+                  </p>
+                </div>
+                {viewingScript.notes && (
+                  <div>
+                    <h4 className="font-bold text-red-800 mb-1 uppercase text-xs">
+                      Checklist An Toàn
+                    </h4>
+                    <p className="text-red-700 bg-red-50 p-2 rounded border border-red-200">
+                      {viewingScript.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Styles for simple anmations & CSS Reset */}
       <style

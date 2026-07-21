@@ -8,7 +8,7 @@ service cloud.firestore {
 
     function allowedCompanyEmail() {
       return signedIn()
-        && request.auth.token.email.matches('^.+@(haichai\\.vn|starspits\\.vn)$');
+        && request.auth.token.email.matches('^.+@(haichai\\.vn|starspits\\.vn|starspirits\\.vn)$');
     }
 
     // Dữ liệu dùng chung cho team Haichai Script Studio.
