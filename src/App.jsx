@@ -786,17 +786,25 @@ const buildAIRequest = ({
     headers['X-Title'] = 'Haichai Script Studio';
   }
 
+  const isReasoningModel = String(model).toLowerCase().includes('reasoning') ||
+                           String(model).toLowerCase().includes('o1-') ||
+                           String(model).toLowerCase().includes('o3-') ||
+                           String(model).toLowerCase().includes('thinking');
+
   const body = {
     model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: fullUserPrompt },
     ],
-    temperature: temperature,
     max_tokens: getAiProviderConfig(provider).maxOutputTokens,
   };
 
-  if (useJsonMode) {
+  if (!isReasoningModel && useJsonMode) {
+    body.temperature = temperature;
+  }
+
+  if (useJsonMode && !isReasoningModel) {
     body.response_format = { type: 'json_object' };
   }
 
